@@ -18,6 +18,7 @@ import TransactionListScreen from '@features/transactions/presentation/screens/T
 import AddTransactionScreen from '@features/transactions/presentation/screens/AddTransactionScreen';
 import ChatSessionListScreen from '@features/ai_chat/presentation/screens/ChatSessionListScreen';
 import ChatScreen from '@features/ai_chat/presentation/screens/ChatScreen';
+import AnalyticsScreen from '@features/analytics/presentation/screens/AnalyticsScreen';
 
 // ============================================================
 // Param List Types
@@ -48,43 +49,6 @@ export type ChatStackParamList = {
   ChatSessionList: undefined;
   Chat: { sessionId: string };
 };
-
-// ============================================================
-// Placeholder Screens
-// ============================================================
-
-function AnalyticsScreen(): React.JSX.Element {
-  return (
-    <View style={placeholderStyles.container}>
-      <Text style={placeholderStyles.icon}>📊</Text>
-      <Text style={placeholderStyles.title}>Analytics</Text>
-      <Text style={placeholderStyles.subtitle}>Coming Soon</Text>
-    </View>
-  );
-}
-
-const placeholderStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: T.colors.background,
-  },
-  icon: {
-    fontSize: 48,
-    marginBottom: T.spacing.md,
-  },
-  title: {
-    fontSize: T.fontSize.xxl,
-    fontWeight: T.fontWeight.bold,
-    color: T.colors.text,
-    marginBottom: T.spacing.xs,
-  },
-  subtitle: {
-    fontSize: T.fontSize.md,
-    color: T.colors.textMuted,
-  },
-});
 
 // ============================================================
 // Auth Stack
