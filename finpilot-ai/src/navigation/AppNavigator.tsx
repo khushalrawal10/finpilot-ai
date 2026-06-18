@@ -16,6 +16,8 @@ import LoginScreen from '@features/auth/presentation/screens/LoginScreen';
 import RegisterScreen from '@features/auth/presentation/screens/RegisterScreen';
 import TransactionListScreen from '@features/transactions/presentation/screens/TransactionListScreen';
 import AddTransactionScreen from '@features/transactions/presentation/screens/AddTransactionScreen';
+import ChatSessionListScreen from '@features/ai_chat/presentation/screens/ChatSessionListScreen';
+import ChatScreen from '@features/ai_chat/presentation/screens/ChatScreen';
 
 // ============================================================
 // Param List Types
@@ -57,24 +59,6 @@ function AnalyticsScreen(): React.JSX.Element {
       <Text style={placeholderStyles.icon}>📊</Text>
       <Text style={placeholderStyles.title}>Analytics</Text>
       <Text style={placeholderStyles.subtitle}>Coming Soon</Text>
-    </View>
-  );
-}
-
-function ChatSessionListScreen(): React.JSX.Element {
-  return (
-    <View style={placeholderStyles.container}>
-      <Text style={placeholderStyles.icon}>💬</Text>
-      <Text style={placeholderStyles.title}>AI Chat</Text>
-      <Text style={placeholderStyles.subtitle}>Coming Soon</Text>
-    </View>
-  );
-}
-
-function ChatScreen(): React.JSX.Element {
-  return (
-    <View style={placeholderStyles.container}>
-      <Text style={placeholderStyles.title}>Chat</Text>
     </View>
   );
 }
