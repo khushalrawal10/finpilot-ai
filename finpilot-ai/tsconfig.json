@@ -12,5 +12,6 @@
       "@navigation/*": ["./src/navigation/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["supabase/functions/**"]
 }
