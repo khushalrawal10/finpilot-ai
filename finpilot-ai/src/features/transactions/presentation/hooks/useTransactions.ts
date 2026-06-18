@@ -83,6 +83,27 @@ export function useCategories() {
 }
 
 // ============================================================
+// Embed Trigger (fire-and-forget)
+// ============================================================
+
+async function triggerEmbed(transactionId: string, userId: string): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/embed`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`,
+        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+      },
+      body: JSON.stringify({ transactionId, userId }),
+    });
+  } catch {
+    /* silent fail — embedding is non-critical */
+  }
+}
+
+// ============================================================
 // useCreateTransaction
 // ============================================================
 
@@ -97,8 +118,13 @@ export function useCreateTransaction() {
       }
       return txnRepo.createTransaction(user.id, input);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['transactions'] });
+
+      // Fire-and-forget: generate embedding for the new transaction
+      if (user) {
+        void triggerEmbed(data.id, user.id);
+      }
     },
   });
 }
