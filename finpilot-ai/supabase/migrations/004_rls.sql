@@ -17,6 +17,9 @@ ALTER TABLE transaction_embeddings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY users_select ON users
     FOR SELECT USING (auth.uid() = id);
 
+CREATE POLICY users_insert ON users
+    FOR INSERT WITH CHECK (auth.uid() = id);
+
 CREATE POLICY users_update ON users
     FOR UPDATE USING (auth.uid() = id)
     WITH CHECK (auth.uid() = id);
