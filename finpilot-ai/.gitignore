@@ -40,3 +40,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# AI context / documentation files
+docs/
+AGENTS.md
+CLAUDE.md
+.gemini/
