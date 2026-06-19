@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,6 +18,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 
 import T from '@shared/theme';
 import { AppTextInput } from '@shared/components';
@@ -53,9 +54,7 @@ export default function AddTransactionScreen(): React.JSX.Element {
   const { categories } = useCategories();
 
   const [type, setType] = useState<'expense' | 'income'>('expense');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
-    null,
-  );
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [transactionDate, setTransactionDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -79,9 +78,7 @@ export default function AddTransactionScreen(): React.JSX.Element {
   const handleDateChange = useCallback(
     (_event: DateTimePickerEvent, selectedDate?: Date) => {
       setShowDatePicker(Platform.OS === 'ios');
-      if (selectedDate) {
-        setTransactionDate(selectedDate);
-      }
+      if (selectedDate) setTransactionDate(selectedDate);
     },
     [],
   );
@@ -103,79 +100,76 @@ export default function AddTransactionScreen(): React.JSX.Element {
   );
 
   const isSaving = createMutation.isPending;
+  const accentColor = type === 'expense' ? T.colors.expense : T.colors.income;
 
   return (
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* Drag handle */}
+      <View style={styles.dragHandle} />
+
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={handleClose} style={styles.headerButton}>
-          <Text style={styles.closeText}>✕</Text>
+        <Pressable onPress={handleClose} style={styles.headerIcon}>
+          <Ionicons name="close" size={24} color={T.colors.text} />
         </Pressable>
-
-        <Text style={styles.headerTitle}>Add Transaction</Text>
-
+        <Text style={styles.headerTitle}>New Transaction</Text>
         <Pressable
           onPress={handleSubmit(onSubmit)}
           disabled={isSaving}
-          style={[styles.headerButton, styles.saveButton]}
+          style={styles.headerSave}
         >
-          {isSaving ? (
-            <ActivityIndicator size="small" color={T.colors.primary} />
-          ) : (
-            <Text style={styles.saveText}>Save</Text>
-          )}
+          <Text style={[styles.saveText, isSaving ? styles.saveTextDisabled : undefined]}>
+            Save
+          </Text>
         </Pressable>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Type Toggle */}
+        {/* Type toggle */}
         <View style={styles.typeToggle}>
           <Pressable
             style={[
               styles.typeButton,
-              type === 'expense' ? styles.typeExpenseActive : styles.typeInactive,
+              type === 'expense' ? styles.typeExpenseActive : styles.typeExpenseInactive,
             ]}
             onPress={() => setType('expense')}
           >
-            <Text
-              style={[
-                styles.typeButtonText,
-                type === 'expense'
-                  ? styles.typeTextActive
-                  : styles.typeTextInactive,
-              ]}
-            >
-              Expense
+            <Ionicons
+              name="arrow-up"
+              size={16}
+              color={type === 'expense' ? '#FFFFFF' : T.colors.expense}
+            />
+            <Text style={[styles.typeText, { color: type === 'expense' ? '#FFFFFF' : T.colors.expense }]}>
+              {' '}Expense
             </Text>
           </Pressable>
 
           <Pressable
             style={[
               styles.typeButton,
-              type === 'income' ? styles.typeIncomeActive : styles.typeInactive,
+              type === 'income' ? styles.typeIncomeActive : styles.typeIncomeInactive,
             ]}
             onPress={() => setType('income')}
           >
-            <Text
-              style={[
-                styles.typeButtonText,
-                type === 'income'
-                  ? styles.typeTextActive
-                  : styles.typeTextInactive,
-              ]}
-            >
-              Income
+            <Ionicons
+              name="arrow-down"
+              size={16}
+              color={type === 'income' ? '#FFFFFF' : T.colors.income}
+            />
+            <Text style={[styles.typeText, { color: type === 'income' ? '#FFFFFF' : T.colors.income }]}>
+              {' '}Income
             </Text>
           </Pressable>
         </View>
 
-        {/* Amount Input */}
+        {/* Amount */}
         <View style={styles.amountSection}>
           <Text style={styles.currencyLabel}>$</Text>
           <Controller
@@ -183,63 +177,47 @@ export default function AddTransactionScreen(): React.JSX.Element {
             name="amount"
             render={({ field: { onChange, value } }) => (
               <TextInput
-                style={[
-                  styles.amountInput,
-                  {
-                    color:
-                      type === 'expense'
-                        ? T.colors.expense
-                        : T.colors.income,
-                  },
-                ]}
+                style={[styles.amountInput, { color: accentColor, borderBottomColor: accentColor }]}
                 value={value}
                 onChangeText={onChange}
                 placeholder="0.00"
-                placeholderTextColor={T.colors.textMuted}
+                placeholderTextColor={T.colors.border}
                 keyboardType="decimal-pad"
               />
             )}
           />
         </View>
         {errors.amount ? (
-          <Text style={styles.errorText}>{errors.amount.message}</Text>
+          <Text style={styles.fieldError}>{errors.amount.message}</Text>
         ) : null}
 
-        {/* Category Picker */}
-        <Text style={styles.sectionLabel}>Category</Text>
-        <ScrollView
+        {/* Category */}
+        <Text style={styles.sectionLabel}>CATEGORY</Text>
+        <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
+          data={categories}
+          keyExtractor={(cat) => cat.id}
           contentContainerStyle={styles.categoryScroll}
-          style={styles.categoryContainer}
-        >
-          {categories.map((cat) => {
+          style={styles.categoryList}
+          renderItem={({ item: cat }) => {
             const isSelected = selectedCategoryId === cat.id;
             return (
               <Pressable
-                key={cat.id}
                 style={[
                   styles.categoryChip,
                   isSelected ? styles.categoryChipSelected : undefined,
                 ]}
-                onPress={() =>
-                  setSelectedCategoryId(isSelected ? null : cat.id)
-                }
+                onPress={() => setSelectedCategoryId(isSelected ? null : cat.id)}
               >
                 <Text style={styles.categoryIcon}>{cat.icon}</Text>
-                <Text
-                  style={[
-                    styles.categoryName,
-                    isSelected ? styles.categoryNameSelected : undefined,
-                  ]}
-                  numberOfLines={1}
-                >
+                <Text style={[styles.categoryName, isSelected ? styles.categoryNameSelected : undefined]}>
                   {cat.name}
                 </Text>
               </Pressable>
             );
-          })}
-        </ScrollView>
+          }}
+        />
 
         {/* Description */}
         <Controller
@@ -247,25 +225,25 @@ export default function AddTransactionScreen(): React.JSX.Element {
           name="description"
           render={({ field: { onChange, value } }) => (
             <AppTextInput
-              label="Description"
+              label={`Description${errors.description ? ' *' : ''}`}
               value={value}
               onChangeText={onChange}
               placeholder="What was this for?"
               error={errors.description?.message}
+              leftIcon={<Ionicons name="create-outline" size={18} color={T.colors.border} />}
+              autoCapitalize="sentences"
             />
           )}
         />
 
-        {/* Date Picker */}
-        <Text style={styles.sectionLabel}>Date</Text>
-        <Pressable
-          style={styles.dateRow}
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Text style={styles.dateIcon}>📅</Text>
+        {/* Date */}
+        <Text style={styles.sectionLabel}>DATE</Text>
+        <Pressable style={styles.dateRow} onPress={() => setShowDatePicker(true)}>
+          <Ionicons name="calendar-outline" size={18} color={T.colors.border} style={styles.dateIcon} />
           <Text style={styles.dateText}>
             {format(transactionDate, 'EEEE, MMM d, yyyy')}
           </Text>
+          <Ionicons name="chevron-forward" size={16} color={T.colors.border} />
         </Pressable>
 
         {showDatePicker && (
@@ -288,13 +266,14 @@ export default function AddTransactionScreen(): React.JSX.Element {
               value={value ?? ''}
               onChangeText={onChange}
               placeholder="Add any extra details..."
+              leftIcon={<Ionicons name="document-text-outline" size={18} color={T.colors.border} />}
+              autoCapitalize="sentences"
             />
           )}
         />
 
-        {/* Mutation error */}
         {createMutation.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={styles.fieldError}>
             {createMutation.error?.message ?? 'Failed to save transaction'}
           </Text>
         ) : null}
@@ -312,169 +291,156 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: T.colors.background,
   },
+  dragHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: T.colors.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 12,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: T.spacing.md,
-    paddingTop: T.spacing.xxl,
-    paddingBottom: T.spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: T.colors.border,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
-  headerButton: {
-    width: 60,
+  headerIcon: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: T.spacing.xs,
   },
   headerTitle: {
-    fontSize: T.fontSize.lg,
-    fontWeight: T.fontWeight.semiBold,
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '700',
     color: T.colors.text,
   },
-  closeText: {
-    fontSize: T.fontSize.xl,
-    color: T.colors.textMuted,
-  },
-  saveButton: {
+  headerSave: {
+    width: 60,
     alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingVertical: 8,
   },
   saveText: {
-    fontSize: T.fontSize.md,
-    fontWeight: T.fontWeight.semiBold,
+    fontSize: 16,
+    fontWeight: '700',
     color: T.colors.primary,
   },
-  scrollContent: {
-    padding: T.spacing.lg,
-    paddingBottom: T.spacing.xxl,
+  saveTextDisabled: {
+    color: T.colors.border,
   },
-
-  // Type toggle
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+  },
   typeToggle: {
     flexDirection: 'row',
-    marginBottom: T.spacing.lg,
-    gap: T.spacing.sm,
+    marginBottom: 8,
+    gap: 8,
   },
   typeButton: {
     flex: 1,
-    paddingVertical: T.spacing.md,
-    borderRadius: T.radius.md,
+    height: 48,
+    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  typeExpenseActive: {
-    backgroundColor: T.colors.expense,
+  typeExpenseActive: { backgroundColor: T.colors.expense },
+  typeExpenseInactive: { backgroundColor: T.colors.expenseLight },
+  typeIncomeActive: { backgroundColor: T.colors.income },
+  typeIncomeInactive: { backgroundColor: T.colors.incomeLight },
+  typeText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
-  typeIncomeActive: {
-    backgroundColor: T.colors.income,
-  },
-  typeInactive: {
-    backgroundColor: T.colors.surface,
-    borderWidth: 1,
-    borderColor: T.colors.border,
-  },
-  typeButtonText: {
-    fontSize: T.fontSize.md,
-    fontWeight: T.fontWeight.semiBold,
-  },
-  typeTextActive: {
-    color: '#FFFFFF',
-  },
-  typeTextInactive: {
-    color: T.colors.textMuted,
-  },
-
-  // Amount
   amountSection: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: T.spacing.sm,
-    paddingVertical: T.spacing.lg,
+    paddingVertical: 24,
   },
   currencyLabel: {
-    fontSize: T.fontSize.xxxl,
-    fontWeight: T.fontWeight.bold,
+    fontSize: 28,
+    fontWeight: '600',
     color: T.colors.textMuted,
-    marginRight: T.spacing.xs,
+    marginRight: 4,
   },
   amountInput: {
     fontSize: 48,
-    fontWeight: T.fontWeight.bold,
-    minWidth: 120,
+    fontWeight: '800',
+    minWidth: 80,
     textAlign: 'center',
     padding: 0,
+    borderBottomWidth: 2,
   },
-
-  // Category
+  fieldError: {
+    fontSize: T.fontSize.xs,
+    color: T.colors.error,
+    marginTop: 4,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
   sectionLabel: {
-    fontSize: T.fontSize.sm,
-    fontWeight: T.fontWeight.medium,
-    color: T.colors.text,
-    marginBottom: T.spacing.sm,
+    fontSize: 12,
+    fontWeight: '600',
+    color: T.colors.textMuted,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 10,
   },
-  categoryContainer: {
-    marginBottom: T.spacing.lg,
+  categoryList: {
+    marginBottom: 16,
   },
   categoryScroll: {
-    paddingBottom: T.spacing.xs,
+    paddingBottom: 4,
   },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: T.spacing.md,
-    paddingVertical: T.spacing.sm,
-    borderRadius: T.radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
     backgroundColor: T.colors.surface,
-    marginRight: T.spacing.sm,
-    borderWidth: 1.5,
+    marginRight: 8,
+    borderWidth: 2,
     borderColor: 'transparent',
   },
   categoryChipSelected: {
+    backgroundColor: T.colors.primaryLight,
     borderColor: T.colors.primary,
-    backgroundColor: '#E8F4FD',
   },
   categoryIcon: {
-    fontSize: T.fontSize.md,
-    marginRight: T.spacing.xs,
+    fontSize: 18,
+    marginRight: 4,
   },
   categoryName: {
-    fontSize: T.fontSize.sm,
+    fontSize: 13,
+    fontWeight: '500',
     color: T.colors.text,
-    fontWeight: T.fontWeight.medium,
   },
   categoryNameSelected: {
     color: T.colors.primary,
   },
-
-  // Date
   dateRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: T.colors.surface,
-    borderRadius: T.radius.md,
-    paddingHorizontal: T.spacing.md,
-    paddingVertical: T.spacing.md,
-    marginBottom: T.spacing.lg,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: T.colors.border,
   },
   dateIcon: {
-    fontSize: T.fontSize.lg,
-    marginRight: T.spacing.sm,
+    marginRight: 12,
   },
   dateText: {
-    fontSize: T.fontSize.md,
+    flex: 1,
+    fontSize: 15,
     color: T.colors.text,
-    fontWeight: T.fontWeight.medium,
-  },
-
-  // Errors
-  errorText: {
-    fontSize: T.fontSize.sm,
-    color: T.colors.error,
-    textAlign: 'center',
-    marginBottom: T.spacing.md,
   },
 });

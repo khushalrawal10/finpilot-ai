@@ -4,6 +4,7 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query';
+import EventSource from 'react-native-sse';
 
 import { supabase } from '@core/network/supabase-client';
 import { useAuthUser } from '@core/di/stores/authStore';
@@ -275,148 +276,102 @@ export function useSendMessage(sessionId: string) {
       });
       fullTextRef.current = '';
 
-      try {
-        // -------------------------------------------------
-        // 1. Optimistically add user message to cache
-        // -------------------------------------------------
-        const optimisticMsg: ChatMessage = {
-          id: `temp-${Date.now()}`,
-          sessionId,
-          role: 'user',
-          content: message,
-          sourceTransactionIds: [],
-          createdAt: new Date().toISOString(),
-        };
+      // -------------------------------------------------
+      // 1. Optimistically add user message to cache
+      // -------------------------------------------------
+      const optimisticMsg: ChatMessage = {
+        id: `temp-${Date.now()}`,
+        sessionId,
+        role: 'user',
+        content: message,
+        sourceTransactionIds: [],
+        createdAt: new Date().toISOString(),
+      };
 
-        queryClient.setQueryData<ChatMessage[]>(
-          CHAT_KEYS.messages(sessionId),
-          (old) => [...(old ?? []), optimisticMsg],
-        );
+      queryClient.setQueryData<ChatMessage[]>(
+        CHAT_KEYS.messages(sessionId),
+        (old) => [...(old ?? []), optimisticMsg],
+      );
 
-        // -------------------------------------------------
-        // 2. Get access token
-        // -------------------------------------------------
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+      // -------------------------------------------------
+      // 2. Get fresh access token
+      // -------------------------------------------------
+      const { data: { session } } = await supabase.auth.getSession();
 
-        if (!session?.access_token) {
-          throw new Error('No active session');
-        }
+      if (!session?.access_token) {
+        setState((prev) => ({ ...prev, error: 'Not authenticated', isStreaming: false }));
+        return;
+      }
 
-        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-        const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+      const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
-        // -------------------------------------------------
-        // 3. Fetch SSE stream from edge function
-        // -------------------------------------------------
-        const response = await fetch(
-          `${supabaseUrl}/functions/v1/chat`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-              'apikey': anonKey,
-            },
-            body: JSON.stringify({
-              message,
-              sessionId,
-              userId: user.id,
-            }),
+      // -------------------------------------------------
+      // 3. Open SSE stream via react-native-sse
+      //    Edge function saves both messages; client only reads
+      // -------------------------------------------------
+      const es = new EventSource(
+        `${supabaseUrl}/functions/v1/chat`,
+        {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': anonKey,
+            'Content-Type': 'application/json',
           },
-        );
+          method: 'POST',
+          body: JSON.stringify({ message, sessionId, userId: user.id }),
+          pollingInterval: 0,
+        },
+      );
 
-        if (!response.ok) {
-          const errBody = await response.text();
-          throw new Error(errBody || `Request failed (${response.status})`);
-        }
+      es.addEventListener('message', (event) => {
+        if (!event.data) return;
+        try {
+          const parsed = JSON.parse(event.data) as {
+            token?: string;
+            done?: boolean;
+            sources?: string[];
+            error?: string;
+          };
 
-        // -------------------------------------------------
-        // 4. Read stream
-        // -------------------------------------------------
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('No response body');
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-
-          // Process complete SSE lines
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? ''; // Keep incomplete line in buffer
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-
-            try {
-              const payload = JSON.parse(line.slice(6)) as {
-                token?: string;
-                done?: boolean;
-                sources?: string[];
-                error?: string;
-              };
-
-              if (payload.error) {
-                setState((prev) => ({
-                  ...prev,
-                  error: payload.error ?? 'Unknown error',
-                  isStreaming: false,
-                }));
-                return;
-              }
-
-              if (payload.token && !payload.done) {
-                fullTextRef.current += payload.token;
-                setState((prev) => ({
-                  ...prev,
-                  streamingText: fullTextRef.current,
-                }));
-              }
-
-              if (payload.done) {
-                const sourceIds = payload.sources ?? [];
-
-                setState({
-                  streamingText: fullTextRef.current,
-                  isStreaming: false,
-                  sources: sourceIds,
-                  error: null,
-                });
-
-                // Invalidate to refetch messages from DB
-                // (the edge function already saved both messages)
-                void queryClient.invalidateQueries({
-                  queryKey: CHAT_KEYS.messages(sessionId),
-                });
-                void queryClient.invalidateQueries({
-                  queryKey: CHAT_KEYS.sessions,
-                });
-
-                return;
-              }
-            } catch {
-              // Skip malformed SSE lines
-            }
+          if (parsed.error) {
+            setState((prev) => ({ ...prev, error: parsed.error ?? 'Unknown error', isStreaming: false }));
+            es.close();
+            return;
           }
+
+          if (parsed.done) {
+            const sourceIds = parsed.sources ?? [];
+            setState({
+              streamingText: fullTextRef.current,
+              isStreaming: false,
+              sources: sourceIds,
+              error: null,
+            });
+            es.close();
+            // Edge function already persisted both messages — just refetch
+            void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.messages(sessionId) });
+            void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.sessions });
+            return;
+          }
+
+          if (parsed.token) {
+            fullTextRef.current += parsed.token;
+            setState((prev) => ({ ...prev, streamingText: fullTextRef.current }));
+          }
+        } catch {
+          // Skip malformed SSE lines
         }
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'Failed to send message';
+      });
+
+      es.addEventListener('error', () => {
         setState((prev) => ({
           ...prev,
-          error: errorMessage,
+          error: 'Connection failed. Please try again.',
           isStreaming: false,
         }));
-      }
+        es.close();
+      });
     },
     [user, sessionId, queryClient],
   );

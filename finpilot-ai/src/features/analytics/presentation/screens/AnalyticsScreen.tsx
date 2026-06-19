@@ -7,6 +7,8 @@ import {
   View,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 
 import T from '@shared/theme';
 import { supabase } from '@core/network/supabase-client';
@@ -49,7 +51,6 @@ function useMonthlySummary(year: number, month: number) {
 
       if (error) throw new Error(error.message);
 
-      // RPC returns a single row
       const row = Array.isArray(data) ? data[0] : data;
       return {
         total_income: Number(row?.total_income ?? 0),
@@ -98,11 +99,6 @@ function useCategoryBreakdown(dateFrom: string, dateTo: string) {
 // Helpers
 // ============================================================
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
 function getMonthRange(year: number, month: number) {
   const from = `${year}-${String(month).padStart(2, '0')}-01`;
   const lastDay = new Date(year, month, 0).getDate();
@@ -118,37 +114,6 @@ function formatCurrency(amount: number): string {
 }
 
 // ============================================================
-// Skeleton Components
-// ============================================================
-
-function SummarySkeleton(): React.JSX.Element {
-  return (
-    <View style={styles.summaryRow}>
-      {[1, 2, 3].map((i) => (
-        <View key={i} style={[styles.summaryCard, styles.skeletonCard]}>
-          <View style={styles.skeletonAmount} />
-          <View style={styles.skeletonLabel} />
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function CategorySkeleton(): React.JSX.Element {
-  return (
-    <View>
-      {[1, 2, 3, 4, 5].map((i) => (
-        <View key={i} style={styles.categoryRow}>
-          <View style={styles.skeletonDot} />
-          <View style={styles.skeletonCatName} />
-          <View style={styles.skeletonCatAmount} />
-        </View>
-      ))}
-    </View>
-  );
-}
-
-// ============================================================
 // Summary Card
 // ============================================================
 
@@ -156,6 +121,8 @@ interface SummaryCardProps {
   label: string;
   amount: number;
   tint: string;
+  bg: string;
+  iconName: keyof typeof Ionicons.glyphMap;
   prefix?: string;
 }
 
@@ -163,16 +130,40 @@ const SummaryCard = React.memo(function SummaryCard({
   label,
   amount,
   tint,
+  bg,
+  iconName,
   prefix,
 }: SummaryCardProps) {
   return (
-    <View style={[styles.summaryCard, { backgroundColor: tint + '12' }]}>
-      <Text style={[styles.summaryAmount, { color: tint }]}>
+    <View style={[summaryStyles.card, { backgroundColor: bg }]}>
+      <Ionicons name={iconName} size={18} color={tint} />
+      <Text style={[summaryStyles.amount, { color: tint }]}>
         {prefix ?? ''}{formatCurrency(amount)}
       </Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={[summaryStyles.label, { color: tint }]}>{label}</Text>
     </View>
   );
+});
+
+const summaryStyles = StyleSheet.create({
+  card: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'flex-start',
+  },
+  amount: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 2,
+  },
 });
 
 // ============================================================
@@ -183,34 +174,21 @@ interface CategoryRowProps {
   item: CategoryBreakdown;
 }
 
-const CategoryRow = React.memo(function CategoryRow({
-  item,
-}: CategoryRowProps) {
+const CategoryRow = React.memo(function CategoryRow({ item }: CategoryRowProps) {
   return (
-    <View style={styles.categoryRow}>
-      <View style={styles.categoryInfo}>
-        <View
-          style={[styles.categoryDot, { backgroundColor: item.category_color }]}
-        />
-        <Text style={styles.categoryName} numberOfLines={1}>
+    <View style={catStyles.container}>
+      <View style={catStyles.topRow}>
+        <View style={[catStyles.dot, { backgroundColor: item.category_color }]} />
+        <Text style={catStyles.name} numberOfLines={1}>
           {item.category_name}
         </Text>
+        <Text style={catStyles.amount}>{formatCurrency(item.total_amount)}</Text>
       </View>
-
-      <View style={styles.categoryRight}>
-        <Text style={styles.categoryAmount}>
-          ${item.total_amount.toFixed(2)}
-        </Text>
-        <Text style={styles.categoryCount}>
-          {item.transaction_count} txn{item.transaction_count !== 1 ? 's' : ''}
-        </Text>
-      </View>
-
-      {/* Progress bar */}
-      <View style={styles.progressBarBg}>
+      <Text style={catStyles.percentage}>{item.percentage.toFixed(0)}% of spending</Text>
+      <View style={catStyles.progressBg}>
         <View
           style={[
-            styles.progressBarFill,
+            catStyles.progressFill,
             {
               width: `${Math.min(item.percentage, 100)}%`,
               backgroundColor: item.category_color,
@@ -222,55 +200,138 @@ const CategoryRow = React.memo(function CategoryRow({
   );
 });
 
+const catStyles = StyleSheet.create({
+  container: {
+    backgroundColor: T.colors.background,
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  name: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: T.colors.text,
+  },
+  amount: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: T.colors.text,
+  },
+  percentage: {
+    fontSize: 12,
+    color: T.colors.textMuted,
+    marginTop: 2,
+    marginLeft: 20,
+  },
+  progressBg: {
+    height: 4,
+    backgroundColor: T.colors.surface,
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 4,
+    borderRadius: 2,
+  },
+});
+
 // ============================================================
-// Analytics Screen
+// Skeleton
+// ============================================================
+
+function SummarySkeleton(): React.JSX.Element {
+  return (
+    <View style={skelStyles.summaryRow}>
+      {[1, 2, 3].map((i) => (
+        <View key={i} style={skelStyles.summaryCard} />
+      ))}
+    </View>
+  );
+}
+
+function CategorySkeleton(): React.JSX.Element {
+  return (
+    <>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <View key={i} style={skelStyles.catCard} />
+      ))}
+    </>
+  );
+}
+
+const skelStyles = StyleSheet.create({
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 20,
+  },
+  summaryCard: {
+    flex: 1,
+    height: 90,
+    borderRadius: 14,
+    backgroundColor: T.colors.surface,
+  },
+  catCard: {
+    height: 88,
+    borderRadius: 14,
+    backgroundColor: T.colors.surface,
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+});
+
+// ============================================================
+// AnalyticsScreen
 // ============================================================
 
 export default function AnalyticsScreen(): React.JSX.Element {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1); // 1-indexed
+  const [month, setMonth] = useState(now.getMonth() + 1);
 
   const { from, to } = useMemo(() => getMonthRange(year, month), [year, month]);
 
-  const {
-    data: summary,
-    isLoading: summaryLoading,
-  } = useMonthlySummary(year, month);
-
-  const {
-    data: categories,
-    isLoading: categoriesLoading,
-  } = useCategoryBreakdown(from, to);
-
-  // ----------------------------------------------------------
-  // Month navigation
-  // ----------------------------------------------------------
+  const { data: summary, isLoading: summaryLoading } = useMonthlySummary(year, month);
+  const { data: categories, isLoading: categoriesLoading } = useCategoryBreakdown(from, to);
 
   const handlePrev = useCallback(() => {
-    if (month === 1) {
-      setYear((y) => y - 1);
-      setMonth(12);
-    } else {
-      setMonth((m) => m - 1);
-    }
+    if (month === 1) { setYear((y) => y - 1); setMonth(12); }
+    else { setMonth((m) => m - 1); }
   }, [month]);
 
   const handleNext = useCallback(() => {
-    const isCurrentMonth =
-      year === now.getFullYear() && month === now.getMonth() + 1;
-    if (isCurrentMonth) return; // Don't go into the future
-
-    if (month === 12) {
-      setYear((y) => y + 1);
-      setMonth(1);
-    } else {
-      setMonth((m) => m + 1);
-    }
+    const isCurrent = year === now.getFullYear() && month === now.getMonth() + 1;
+    if (isCurrent) return;
+    if (month === 12) { setYear((y) => y + 1); setMonth(1); }
+    else { setMonth((m) => m + 1); }
   }, [month, year, now]);
 
-  const isCurrentMonth =
-    year === now.getFullYear() && month === now.getMonth() + 1;
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+
+  const monthLabel = format(new Date(year, month - 1, 1), 'MMMM yyyy');
+
+  const netColor = summary
+    ? summary.net >= 0 ? T.colors.primary : T.colors.error
+    : T.colors.primary;
 
   return (
     <ScrollView
@@ -279,38 +340,30 @@ export default function AnalyticsScreen(): React.JSX.Element {
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
-      <Text style={styles.headerTitle}>Analytics</Text>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Analytics</Text>
+      </View>
 
-      {/* Month Selector */}
+      {/* Month selector */}
       <View style={styles.monthSelector}>
         <Pressable onPress={handlePrev} style={styles.monthArrow}>
-          <Text style={styles.monthArrowText}>‹</Text>
+          <Ionicons name="chevron-back" size={20} color={T.colors.primary} />
         </Pressable>
-
-        <Text style={styles.monthLabel}>
-          {MONTH_NAMES[month - 1]} {year}
-        </Text>
-
+        <Text style={styles.monthLabel}>{monthLabel}</Text>
         <Pressable
           onPress={handleNext}
-          style={[
-            styles.monthArrow,
-            isCurrentMonth ? styles.monthArrowDisabled : undefined,
-          ]}
+          style={[styles.monthArrow, isCurrentMonth ? styles.monthArrowDisabled : undefined]}
           disabled={isCurrentMonth}
         >
-          <Text
-            style={[
-              styles.monthArrowText,
-              isCurrentMonth ? styles.monthArrowTextDisabled : undefined,
-            ]}
-          >
-            ›
-          </Text>
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={isCurrentMonth ? T.colors.border : T.colors.primary}
+          />
         </Pressable>
       </View>
 
-      {/* Summary Cards */}
+      {/* Summary cards */}
       {summaryLoading ? (
         <SummarySkeleton />
       ) : summary ? (
@@ -318,47 +371,43 @@ export default function AnalyticsScreen(): React.JSX.Element {
           <SummaryCard
             label="Income"
             amount={summary.total_income}
-            tint={T.colors.income}
+            tint="#16A34A"
+            bg={T.colors.incomeLight}
+            iconName="arrow-down-circle"
             prefix="+"
           />
           <SummaryCard
             label="Expenses"
             amount={summary.total_expenses}
-            tint={T.colors.expense}
+            tint="#DC2626"
+            bg={T.colors.expenseLight}
+            iconName="arrow-up-circle"
           />
           <SummaryCard
             label="Net"
             amount={summary.net}
-            tint={T.colors.primary}
+            tint={netColor}
+            bg={T.colors.primaryLight}
+            iconName="wallet-outline"
             prefix={summary.net >= 0 ? '+' : '-'}
           />
         </View>
       ) : null}
 
-      {/* Transaction count */}
-      {summary && !summaryLoading ? (
-        <Text style={styles.txnCount}>
-          {summary.transaction_count} transaction
-          {summary.transaction_count !== 1 ? 's' : ''} this month
-        </Text>
-      ) : null}
-
-      {/* Category Breakdown */}
+      {/* Category section title */}
       <Text style={styles.sectionTitle}>Spending by Category</Text>
 
+      {/* Category rows */}
       {categoriesLoading ? (
         <CategorySkeleton />
       ) : categories && categories.length > 0 ? (
-        <View style={styles.categoryList}>
-          {categories.map((cat) => (
-            <CategoryRow key={cat.category_name} item={cat} />
-          ))}
-        </View>
+        categories.map((cat) => (
+          <CategoryRow key={cat.category_name} item={cat} />
+        ))
       ) : (
         <View style={styles.emptyCategories}>
-          <Text style={styles.emptyCategoriesText}>
-            No spending data for this month
-          </Text>
+          <Ionicons name="bar-chart-outline" size={36} color={T.colors.border} />
+          <Text style={styles.emptyCategoriesText}>No spending data for this month</Text>
         </View>
       )}
     </ScrollView>
@@ -372,186 +421,69 @@ export default function AnalyticsScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: T.colors.background,
+    backgroundColor: T.colors.surface,
   },
   content: {
-    paddingHorizontal: T.spacing.lg,
-    paddingTop: T.spacing.xxl,
-    paddingBottom: T.spacing.xxl,
+    paddingBottom: 40,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 56,
+    paddingBottom: 8,
+    backgroundColor: T.colors.background,
   },
   headerTitle: {
-    fontSize: T.fontSize.xxl,
-    fontWeight: T.fontWeight.bold,
+    fontSize: 24,
+    fontWeight: '700',
     color: T.colors.text,
-    marginBottom: T.spacing.lg,
   },
-
-  // Month selector
   monthSelector: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: T.spacing.lg,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    backgroundColor: T.colors.background,
   },
   monthArrow: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: T.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: T.radius.full,
-    backgroundColor: T.colors.surface,
   },
   monthArrowDisabled: {
-    opacity: 0.3,
-  },
-  monthArrowText: {
-    fontSize: 28,
-    color: T.colors.primary,
-    lineHeight: 32,
-  },
-  monthArrowTextDisabled: {
-    color: T.colors.textMuted,
+    opacity: 0.4,
   },
   monthLabel: {
-    fontSize: T.fontSize.lg,
-    fontWeight: T.fontWeight.semiBold,
-    color: T.colors.text,
-    marginHorizontal: T.spacing.lg,
-    minWidth: 160,
+    flex: 1,
     textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '700',
+    color: T.colors.text,
   },
-
-  // Summary cards
   summaryRow: {
     flexDirection: 'row',
-    gap: T.spacing.sm,
-    marginBottom: T.spacing.sm,
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 20,
   },
-  summaryCard: {
-    flex: 1,
-    borderRadius: T.radius.md,
-    paddingVertical: T.spacing.md,
-    paddingHorizontal: T.spacing.sm,
-    alignItems: 'center',
-  },
-  summaryAmount: {
-    fontSize: T.fontSize.lg,
-    fontWeight: T.fontWeight.bold,
-    marginBottom: 2,
-  },
-  summaryLabel: {
-    fontSize: T.fontSize.xs,
-    color: T.colors.textMuted,
-    fontWeight: T.fontWeight.medium,
-  },
-  txnCount: {
-    fontSize: T.fontSize.sm,
-    color: T.colors.textMuted,
-    textAlign: 'center',
-    marginBottom: T.spacing.xl,
-  },
-
-  // Category section
   sectionTitle: {
-    fontSize: T.fontSize.lg,
-    fontWeight: T.fontWeight.semiBold,
+    fontSize: 17,
+    fontWeight: '700',
     color: T.colors.text,
-    marginBottom: T.spacing.md,
-  },
-  categoryList: {
-    gap: T.spacing.md,
-  },
-  categoryRow: {
-    marginBottom: T.spacing.xs,
-  },
-  categoryInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  categoryDot: {
-    width: 10,
-    height: 10,
-    borderRadius: T.radius.full,
-    marginRight: T.spacing.sm,
-  },
-  categoryName: {
-    fontSize: T.fontSize.md,
-    fontWeight: T.fontWeight.medium,
-    color: T.colors.text,
-    flex: 1,
-  },
-  categoryRight: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    alignItems: 'flex-end',
-  },
-  categoryAmount: {
-    fontSize: T.fontSize.md,
-    fontWeight: T.fontWeight.semiBold,
-    color: T.colors.text,
-  },
-  categoryCount: {
-    fontSize: T.fontSize.xs,
-    color: T.colors.textMuted,
-  },
-  progressBarBg: {
-    height: 4,
-    backgroundColor: T.colors.surface,
-    borderRadius: T.radius.full,
-    marginTop: T.spacing.xs,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: 4,
-    borderRadius: T.radius.full,
+    paddingHorizontal: 20,
+    marginBottom: 12,
   },
   emptyCategories: {
-    paddingVertical: T.spacing.xl,
     alignItems: 'center',
+    paddingVertical: 48,
   },
   emptyCategoriesText: {
-    fontSize: T.fontSize.md,
+    fontSize: 14,
     color: T.colors.textMuted,
-  },
-
-  // Skeletons
-  skeletonCard: {
-    backgroundColor: '#F0F0F0',
-  },
-  skeletonAmount: {
-    width: 60,
-    height: 20,
-    backgroundColor: '#E5E5E5',
-    borderRadius: T.radius.sm,
-    marginBottom: 6,
-  },
-  skeletonLabel: {
-    width: 40,
-    height: 12,
-    backgroundColor: '#E5E5E5',
-    borderRadius: T.radius.sm,
-  },
-  skeletonDot: {
-    width: 10,
-    height: 10,
-    borderRadius: T.radius.full,
-    backgroundColor: '#E5E5E5',
-    marginRight: T.spacing.sm,
-  },
-  skeletonCatName: {
-    width: 100,
-    height: 14,
-    backgroundColor: '#E5E5E5',
-    borderRadius: T.radius.sm,
-    flex: 1,
-  },
-  skeletonCatAmount: {
-    width: 60,
-    height: 14,
-    backgroundColor: '#E5E5E5',
-    borderRadius: T.radius.sm,
-    marginLeft: T.spacing.md,
+    marginTop: 12,
   },
 });

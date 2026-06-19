@@ -162,7 +162,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const { data: searchResults, error: searchError } = await supabase.rpc(
       'search_transactions_semantic',
       {
-        p_query_embedding: JSON.stringify(queryEmbedding),
+        p_query_embedding: queryEmbedding,
         p_user_id: userId,
         p_date_from: dateFrom,
         p_date_to: dateTo,

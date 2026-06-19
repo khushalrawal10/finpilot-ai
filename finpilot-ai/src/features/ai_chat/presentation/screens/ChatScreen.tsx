@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
+  Animated,
+  Easing,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -12,6 +20,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { format } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 
 import T from '@shared/theme';
 import type { ChatStackParamList } from '@navigation/AppNavigator';
@@ -35,27 +44,66 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 // ============================================================
-// Blinking Cursor Hook
+// Blinking cursor hook
 // ============================================================
 
-function useBlinkingCursor(active: boolean): string {
-  const [visible, setVisible] = useState(true);
+function useBlinkingCursor(active: boolean): boolean {
+  const [show, setShow] = useState(true);
 
   useEffect(() => {
-    if (!active) {
-      setVisible(false);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setVisible((prev) => !prev);
-    }, 500);
-
-    return () => clearInterval(interval);
+    if (!active) { setShow(false); return; }
+    const id = setInterval(() => setShow((v) => !v), 500);
+    return () => clearInterval(id);
   }, [active]);
 
-  return active && visible ? '|' : '';
+  return active && show;
 }
+
+// ============================================================
+// Streaming dots (3-dot placeholder before first token)
+// ============================================================
+
+function StreamingDots(): React.JSX.Element {
+  const anims = useRef([
+    new Animated.Value(1),
+    new Animated.Value(1),
+    new Animated.Value(1),
+  ]).current;
+
+  useEffect(() => {
+    const seq = Animated.loop(
+      Animated.sequence(
+        anims.map((a, i) =>
+          Animated.sequence([
+            Animated.delay(i * 150),
+            Animated.timing(a, { toValue: 0.2, duration: 300, useNativeDriver: true, easing: Easing.ease }),
+            Animated.timing(a, { toValue: 1, duration: 300, useNativeDriver: true, easing: Easing.ease }),
+          ]),
+        ),
+      ),
+    );
+    seq.start();
+    return () => seq.stop();
+  }, [anims]);
+
+  return (
+    <View style={dotsStyles.row}>
+      {anims.map((a, i) => (
+        <Animated.View key={i} style={[dotsStyles.dot, { opacity: a }]} />
+      ))}
+    </View>
+  );
+}
+
+const dotsStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6 },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: T.colors.border,
+  },
+});
 
 // ============================================================
 // Message Bubble
@@ -65,149 +113,162 @@ interface MessageBubbleProps {
   message: ChatMessage;
   isStreamingMessage: boolean;
   streamingText: string;
-  cursor: string;
+  showCursor: boolean;
 }
 
 const MessageBubble = React.memo(function MessageBubble({
   message,
   isStreamingMessage,
   streamingText,
-  cursor,
+  showCursor,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
-  const displayText = isStreamingMessage ? streamingText + cursor : message.content;
+  const displayText = isStreamingMessage ? streamingText : message.content;
   const timestamp = format(new Date(message.createdAt), 'h:mm a');
 
-  return (
-    <View
-      style={[
-        bubbleStyles.row,
-        isUser ? bubbleStyles.rowUser : bubbleStyles.rowAssistant,
-      ]}
-    >
-      <View
-        style={[
-          bubbleStyles.bubble,
-          isUser ? bubbleStyles.bubbleUser : bubbleStyles.bubbleAssistant,
-        ]}
-      >
-        <Text
-          style={[
-            bubbleStyles.text,
-            isUser ? bubbleStyles.textUser : bubbleStyles.textAssistant,
-          ]}
-        >
-          {displayText || (isStreamingMessage ? '...' : '')}
-        </Text>
+  if (isUser) {
+    return (
+      <View style={bubbleStyles.userWrapper}>
+        <View style={bubbleStyles.userBubble}>
+          <Text style={bubbleStyles.userText}>{displayText}</Text>
+        </View>
+        <Text style={bubbleStyles.userTimestamp}>{timestamp}</Text>
       </View>
-      <Text
-        style={[
-          bubbleStyles.timestamp,
-          isUser ? bubbleStyles.timestampUser : bubbleStyles.timestampAssistant,
-        ]}
-      >
-        {timestamp}
-      </Text>
+    );
+  }
+
+  return (
+    <View style={bubbleStyles.assistantWrapper}>
+      <View style={bubbleStyles.avatar}>
+        <Text style={bubbleStyles.avatarText}>FP</Text>
+      </View>
+      <View style={bubbleStyles.assistantContent}>
+        <View style={bubbleStyles.assistantBubble}>
+          {isStreamingMessage && !displayText ? (
+            <StreamingDots />
+          ) : (
+            <Text style={bubbleStyles.assistantText}>
+              {displayText || ''}
+              {isStreamingMessage && showCursor ? (
+                <Text style={bubbleStyles.cursor}>{'|'}</Text>
+              ) : null}
+            </Text>
+          )}
+        </View>
+        <Text style={bubbleStyles.assistantTimestamp}>{timestamp}</Text>
+      </View>
     </View>
   );
 });
 
 const bubbleStyles = StyleSheet.create({
-  row: {
-    marginBottom: T.spacing.sm,
-    paddingHorizontal: T.spacing.md,
-  },
-  rowUser: {
+  userWrapper: {
     alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 4,
   },
-  rowAssistant: {
-    alignItems: 'flex-start',
-  },
-  bubble: {
-    maxWidth: '80%',
-    borderRadius: T.radius.lg,
-    paddingHorizontal: T.spacing.md,
-    paddingVertical: T.spacing.sm + 2,
-  },
-  bubbleUser: {
+  userBubble: {
     backgroundColor: T.colors.primary,
-    borderBottomRightRadius: T.radius.sm,
+    borderRadius: 18,
+    borderBottomRightRadius: 4,
+    maxWidth: '75%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  bubbleAssistant: {
-    backgroundColor: '#F0F0F0',
-    borderBottomLeftRadius: T.radius.sm,
-  },
-  text: {
-    fontSize: T.fontSize.md,
+  userText: {
+    fontSize: 15,
+    color: '#FFFFFF',
     lineHeight: 22,
   },
-  textUser: {
-    color: '#FFFFFF',
-  },
-  textAssistant: {
-    color: T.colors.text,
-  },
-  timestamp: {
-    fontSize: T.fontSize.xs - 1,
-    color: T.colors.textMuted,
-    marginTop: 2,
-  },
-  timestampUser: {
+  userTimestamp: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 4,
     marginRight: 4,
   },
-  timestampAssistant: {
+  assistantWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: T.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    marginBottom: 4,
+  },
+  avatarText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  assistantContent: {
+    maxWidth: '82%',
+  },
+  assistantBubble: {
+    backgroundColor: T.colors.surface,
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  assistantText: {
+    fontSize: 15,
+    color: T.colors.text,
+    lineHeight: 22,
+  },
+  cursor: {
+    color: T.colors.primary,
+    fontWeight: '300',
+  },
+  assistantTimestamp: {
+    fontSize: 11,
+    color: T.colors.border,
+    marginTop: 4,
     marginLeft: 4,
   },
 });
 
 // ============================================================
-// Suggestion Chip
+// Streaming status indicator (pulsing dot in header)
 // ============================================================
 
-interface SuggestionChipProps {
-  text: string;
-  onPress: (text: string) => void;
+function StreamingDot({ active }: { active: boolean }): React.JSX.Element {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!active) { pulse.setValue(1); return; }
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [active, pulse]);
+
+  return (
+    <Animated.View
+      style={[
+        headerDotStyles.dot,
+        { backgroundColor: active ? T.colors.primary : '#22C55E', opacity: pulse },
+      ]}
+    />
+  );
 }
 
-const SuggestionChip = React.memo(function SuggestionChip({
-  text,
-  onPress,
-}: SuggestionChipProps) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        chipStyles.chip,
-        pressed ? chipStyles.chipPressed : undefined,
-      ]}
-      onPress={() => onPress(text)}
-    >
-      <Text style={chipStyles.chipText}>{text}</Text>
-    </Pressable>
-  );
-});
-
-const chipStyles = StyleSheet.create({
-  chip: {
-    backgroundColor: '#E8F4FD',
-    borderRadius: T.radius.full,
-    paddingHorizontal: T.spacing.md,
-    paddingVertical: T.spacing.sm,
-    marginRight: T.spacing.sm,
-    borderWidth: 1,
-    borderColor: T.colors.primary + '30',
-  },
-  chipPressed: {
-    backgroundColor: T.colors.primary + '20',
-  },
-  chipText: {
-    fontSize: T.fontSize.sm,
-    color: T.colors.primary,
-    fontWeight: T.fontWeight.medium,
-  },
+const headerDotStyles = StyleSheet.create({
+  dot: { width: 8, height: 8, borderRadius: 4 },
 });
 
 // ============================================================
-// Chat Screen
+// ChatScreen
 // ============================================================
 
 export default function ChatScreen(): React.JSX.Element {
@@ -216,20 +277,17 @@ export default function ChatScreen(): React.JSX.Element {
   const { sessionId } = route.params;
 
   const { messages, isLoading: messagesLoading } = useMessages(sessionId);
-  const { sendMessage, streamingText, isStreaming, sources } =
+  const { sendMessage, streamingText, isStreaming, sources, error } =
     useSendMessage(sessionId);
 
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cursor = useBlinkingCursor(isStreaming);
+  const showCursor = useBlinkingCursor(isStreaming);
 
-  // ----------------------------------------------------------
-  // Build display messages (append streaming placeholder)
-  // ----------------------------------------------------------
-
+  // Build display list (inject streaming placeholder)
   const displayMessages = useMemo(() => {
-    if (!isStreaming || !streamingText) return messages;
+    if (!isStreaming && !streamingText) return messages;
 
     const streamingMsg: ChatMessage = {
       id: 'streaming-placeholder',
@@ -243,69 +301,40 @@ export default function ChatScreen(): React.JSX.Element {
     return [...messages, streamingMsg];
   }, [messages, isStreaming, streamingText, sessionId]);
 
-  // ----------------------------------------------------------
   // Auto-scroll
-  // ----------------------------------------------------------
-
   const scrollToBottom = useCallback(() => {
-    if (scrollTimerRef.current) {
-      clearTimeout(scrollTimerRef.current);
-    }
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    }, 80);
   }, []);
 
-  // Scroll on new messages
-  useEffect(() => {
-    scrollToBottom();
-  }, [displayMessages.length, scrollToBottom]);
+  useEffect(() => { scrollToBottom(); }, [displayMessages.length, scrollToBottom]);
+  useEffect(() => { if (isStreaming) scrollToBottom(); }, [streamingText, isStreaming, scrollToBottom]);
+  useEffect(() => () => { if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current); }, []);
 
-  // Scroll during streaming (debounced)
-  useEffect(() => {
-    if (isStreaming) {
-      scrollToBottom();
-    }
-  }, [streamingText, isStreaming, scrollToBottom]);
-
-  // Cleanup scroll timer
-  useEffect(() => {
-    return () => {
-      if (scrollTimerRef.current) {
-        clearTimeout(scrollTimerRef.current);
-      }
-    };
-  }, []);
-
-  // ----------------------------------------------------------
   // Handlers
-  // ----------------------------------------------------------
-
   const handleSend = useCallback(
     (text?: string) => {
-      const messageText = (text ?? inputText).trim();
-      if (!messageText || isStreaming) return;
-
+      const msg = (text ?? inputText).trim();
+      if (!msg || isStreaming) return;
       setInputText('');
-      void sendMessage(messageText);
+      void sendMessage(msg);
     },
     [inputText, isStreaming, sendMessage],
   );
 
-  const handleSuggestion = useCallback(
-    (text: string) => {
-      handleSend(text);
-    },
-    [handleSend],
-  );
+  const handleBack = useCallback(() => { navigation.goBack(); }, [navigation]);
 
-  const handleBack = useCallback(() => {
-    navigation.goBack();
-  }, [navigation]);
+  // Title
+  const title = useMemo(() => {
+    if (messages.length === 0) return 'New Chat';
+    const first = messages[0].content;
+    return first.length > 24 ? first.slice(0, 24) + '…' : first;
+  }, [messages]);
 
-  // ----------------------------------------------------------
-  // Render message
-  // ----------------------------------------------------------
+  const showSources = !isStreaming && sources.length > 0;
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
 
   const renderItem = useCallback(
     ({ item }: { item: ChatMessage }) => {
@@ -315,51 +344,29 @@ export default function ChatScreen(): React.JSX.Element {
           message={item}
           isStreamingMessage={isStreamingMsg}
           streamingText={isStreamingMsg ? streamingText : ''}
-          cursor={isStreamingMsg ? cursor : ''}
+          showCursor={showCursor}
         />
       );
     },
-    [streamingText, cursor],
+    [streamingText, showCursor],
   );
 
   const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
 
-  // ----------------------------------------------------------
-  // Title
-  // ----------------------------------------------------------
-
-  const title = useMemo(() => {
-    const raw = messages.length > 0
-      ? messages[0].content.slice(0, 20) + (messages[0].content.length > 20 ? '...' : '')
-      : 'New Chat';
-    return raw;
-  }, [messages]);
-
-  // ----------------------------------------------------------
-  // Sources bar
-  // ----------------------------------------------------------
-
-  const showSources = !isStreaming && sources.length > 0;
+  const canSend = Boolean(inputText.trim()) && !isStreaming;
 
   return (
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={handleBack} style={styles.backButton}>
-          <Text style={styles.backText}>‹</Text>
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {title}
-        </Text>
-        <View style={styles.headerRight}>
-          {isStreaming && (
-            <Text style={styles.streamingLabel}>Thinking...</Text>
-          )}
-        </View>
+        <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
+        <StreamingDot active={isStreaming} />
       </View>
 
       {/* Messages */}
@@ -372,44 +379,67 @@ export default function ChatScreen(): React.JSX.Element {
         showsVerticalScrollIndicator={false}
         onContentSizeChange={scrollToBottom}
         ListHeaderComponent={
-          !messagesLoading && messages.length === 0 ? (
-            <View style={styles.welcomeContainer}>
-              <Text style={styles.welcomeIcon}>🤖</Text>
-              <Text style={styles.welcomeTitle}>
-                Hi! I&apos;m FinPilot
-              </Text>
-              <Text style={styles.welcomeSubtitle}>
-                Ask me anything about your finances
-              </Text>
+          !messagesLoading && messages.length === 0 && !isStreaming ? (
+            <View style={styles.welcome}>
+              <View style={styles.welcomeIconBox}>
+                <Ionicons name="sparkles" size={28} color={T.colors.primary} />
+              </View>
+              <Text style={styles.welcomeTitle}>Hi! I'm FinPilot</Text>
+              <Text style={styles.welcomeSub}>Ask me anything about your finances</Text>
             </View>
           ) : null
         }
       />
 
-      {/* Sources bar */}
-      {showSources && (
-        <View style={styles.sourcesBar}>
-          <Text style={styles.sourcesText}>
-            📎 Based on {sources.length} transaction
-            {sources.length !== 1 ? 's' : ''}
-          </Text>
+      {/* Error bar */}
+      {error ? (
+        <View style={styles.errorBar}>
+          <Text style={styles.errorText}>{error}</Text>
         </View>
-      )}
+      ) : null}
 
-      {/* Suggestion chips (only when empty) */}
-      {messages.length === 0 && !isStreaming && (
+      {/* Sources pill */}
+      {showSources ? (
+        <Pressable
+          style={styles.sourcesPill}
+          onPress={() => setSourcesExpanded((v) => !v)}
+        >
+          <Ionicons name="documents-outline" size={14} color={T.colors.primary} />
+          <Text style={styles.sourcesText}>
+            {' '}Based on {sources.length} transaction{sources.length !== 1 ? 's' : ''}
+          </Text>
+          <Ionicons
+            name={sourcesExpanded ? 'chevron-up' : 'chevron-down'}
+            size={12}
+            color={T.colors.primary}
+          />
+        </Pressable>
+      ) : null}
+
+      {/* Suggested questions */}
+      {messages.length === 0 && !isStreaming ? (
         <View style={styles.suggestionsContainer}>
+          <Text style={styles.tryAsking}>Try asking:</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.suggestionsScroll}
           >
             {SUGGESTED_QUESTIONS.map((q) => (
-              <SuggestionChip key={q} text={q} onPress={handleSuggestion} />
+              <Pressable
+                key={q}
+                style={({ pressed }) => [
+                  styles.suggestionChip,
+                  pressed ? styles.suggestionChipPressed : undefined,
+                ]}
+                onPress={() => handleSend(q)}
+              >
+                <Text style={styles.suggestionText}>{q}</Text>
+              </Pressable>
             ))}
           </ScrollView>
         </View>
-      )}
+      ) : null}
 
       {/* Input bar */}
       <View style={styles.inputBar}>
@@ -418,7 +448,7 @@ export default function ChatScreen(): React.JSX.Element {
           value={inputText}
           onChangeText={setInputText}
           placeholder="Ask about your finances..."
-          placeholderTextColor={T.colors.textMuted}
+          placeholderTextColor={T.colors.border}
           multiline
           maxLength={500}
           editable={!isStreaming}
@@ -427,28 +457,15 @@ export default function ChatScreen(): React.JSX.Element {
           blurOnSubmit
         />
         <Pressable
-          style={({ pressed }) => [
-            styles.sendButton,
-            (!inputText.trim() || isStreaming)
-              ? styles.sendButtonDisabled
-              : undefined,
-            pressed && inputText.trim() && !isStreaming
-              ? styles.sendButtonPressed
-              : undefined,
-          ]}
+          style={[styles.sendButton, !canSend ? styles.sendButtonDisabled : undefined]}
           onPress={() => handleSend()}
-          disabled={!inputText.trim() || isStreaming}
+          disabled={!canSend}
         >
-          <Text
-            style={[
-              styles.sendIcon,
-              (!inputText.trim() || isStreaming)
-                ? styles.sendIconDisabled
-                : undefined,
-            ]}
-          >
-            ↑
-          </Text>
+          <Ionicons
+            name="arrow-up"
+            size={20}
+            color={canSend ? '#FFFFFF' : T.colors.border}
+          />
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -467,12 +484,11 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: T.spacing.sm,
-    paddingTop: T.spacing.xxl,
-    paddingBottom: T.spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: T.colors.border,
-    backgroundColor: T.colors.background,
+    paddingHorizontal: 16,
+    paddingTop: 52,
+    paddingBottom: 16,
+    backgroundColor: T.colors.text,
+    gap: 12,
   },
   backButton: {
     width: 40,
@@ -480,114 +496,128 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backText: {
-    fontSize: 32,
-    color: T.colors.primary,
-    lineHeight: 36,
-  },
   headerTitle: {
     flex: 1,
-    fontSize: T.fontSize.lg,
-    fontWeight: T.fontWeight.semiBold,
-    color: T.colors.text,
-    textAlign: 'center',
-  },
-  headerRight: {
-    width: 80,
-    alignItems: 'flex-end',
-    paddingRight: T.spacing.sm,
-  },
-  streamingLabel: {
-    fontSize: T.fontSize.xs,
-    color: T.colors.primary,
-    fontWeight: T.fontWeight.medium,
+    fontSize: 16,
+    fontWeight: '600',
+    color: T.colors.textInverse,
   },
   messageList: {
-    paddingVertical: T.spacing.md,
+    paddingVertical: 12,
     flexGrow: 1,
   },
-  welcomeContainer: {
+  welcome: {
     alignItems: 'center',
-    paddingVertical: T.spacing.xxl * 2,
+    paddingVertical: 60,
     paddingHorizontal: T.spacing.xl,
   },
-  welcomeIcon: {
-    fontSize: 48,
-    marginBottom: T.spacing.md,
+  welcomeIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: T.colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   welcomeTitle: {
-    fontSize: T.fontSize.xxl,
-    fontWeight: T.fontWeight.bold,
+    fontSize: 22,
+    fontWeight: '700',
     color: T.colors.text,
-    marginBottom: T.spacing.xs,
+    marginTop: 16,
   },
-  welcomeSubtitle: {
-    fontSize: T.fontSize.md,
+  welcomeSub: {
+    fontSize: 14,
     color: T.colors.textMuted,
     textAlign: 'center',
+    marginTop: 8,
   },
-  sourcesBar: {
-    paddingHorizontal: T.spacing.lg,
-    paddingVertical: T.spacing.sm,
-    backgroundColor: '#F8F9FA',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: T.colors.border,
+  errorBar: {
+    backgroundColor: T.colors.expenseLight,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  errorText: {
+    fontSize: 13,
+    color: T.colors.error,
+    textAlign: 'center',
+  },
+  sourcesPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginLeft: 52,
+    marginBottom: 4,
+    backgroundColor: T.colors.primaryLight,
+    borderRadius: T.radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   sourcesText: {
-    fontSize: T.fontSize.sm,
-    color: T.colors.textMuted,
-    fontWeight: T.fontWeight.medium,
+    fontSize: 12,
+    color: T.colors.primary,
+    fontWeight: '600',
   },
   suggestionsContainer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: T.colors.border,
-    paddingVertical: T.spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    paddingTop: 8,
+  },
+  tryAsking: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: T.colors.textMuted,
+    paddingHorizontal: 16,
+    marginBottom: 8,
   },
   suggestionsScroll: {
-    paddingHorizontal: T.spacing.md,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  suggestionChip: {
+    backgroundColor: T.colors.surface,
+    borderRadius: T.radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginRight: 8,
+  },
+  suggestionChipPressed: {
+    opacity: 0.7,
+  },
+  suggestionText: {
+    fontSize: 13,
+    color: T.colors.text,
+    fontWeight: '500',
   },
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: T.spacing.md,
-    paddingVertical: T.spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: T.colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
     backgroundColor: T.colors.background,
+    gap: 10,
   },
   textInput: {
     flex: 1,
     backgroundColor: T.colors.surface,
-    borderRadius: T.radius.lg,
-    paddingHorizontal: T.spacing.md,
-    paddingVertical: T.spacing.sm + 2,
-    fontSize: T.fontSize.md,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
     color: T.colors.text,
     maxHeight: 100,
-    borderWidth: 1,
-    borderColor: T.colors.border,
   },
   sendButton: {
-    width: 38,
-    height: 38,
-    borderRadius: T.radius.full,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: T.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: T.spacing.sm,
   },
   sendButtonDisabled: {
     backgroundColor: T.colors.surface,
-  },
-  sendButtonPressed: {
-    opacity: 0.8,
-  },
-  sendIcon: {
-    fontSize: T.fontSize.lg,
-    fontWeight: T.fontWeight.bold,
-    color: '#FFFFFF',
-  },
-  sendIconDisabled: {
-    color: T.colors.textMuted,
   },
 });

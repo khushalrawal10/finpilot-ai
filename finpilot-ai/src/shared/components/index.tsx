@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardTypeOptions,
@@ -9,6 +9,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import T from '@shared/theme';
 
@@ -26,18 +27,19 @@ interface ButtonProps {
   size?: ButtonSize;
   loading?: boolean;
   disabled?: boolean;
+  style?: ViewStyle;
 }
 
 const buttonHeights: Record<ButtonSize, number> = {
-  sm: 36,
-  md: 44,
+  sm: 40,
+  md: 48,
   lg: 52,
 };
 
 const buttonFontSizes: Record<ButtonSize, number> = {
   sm: T.fontSize.sm,
   md: T.fontSize.md,
-  lg: T.fontSize.lg,
+  lg: T.fontSize.md,
 };
 
 const buttonPaddingH: Record<ButtonSize, number> = {
@@ -53,37 +55,39 @@ export const Button = React.memo(function Button({
   size = 'md',
   loading = false,
   disabled = false,
+  style,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
-  const containerStyle: ViewStyle[] = [
-    buttonStyles.base,
-    {
-      height: buttonHeights[size],
-      paddingHorizontal: buttonPaddingH[size],
-      borderRadius: T.radius.md,
-    },
-    buttonStyles[variant],
-    isDisabled ? buttonStyles.disabled : undefined,
-  ].filter(Boolean) as ViewStyle[];
-
-  const textColor = variant === 'primary' || variant === 'danger'
-    ? '#FFFFFF'
-    : variant === 'secondary'
-      ? T.colors.primary
-      : T.colors.text;
+  const textColor =
+    variant === 'primary' || variant === 'danger'
+      ? '#FFFFFF'
+      : variant === 'secondary'
+        ? T.colors.primary
+        : T.colors.text;
 
   return (
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
       style={({ pressed }) => [
-        ...containerStyle,
+        buttonStyles.base,
+        {
+          height: buttonHeights[size],
+          paddingHorizontal: buttonPaddingH[size],
+          borderRadius: 12,
+        },
+        buttonStyles[variant],
+        isDisabled ? buttonStyles.disabled : undefined,
         pressed && !isDisabled ? buttonStyles.pressed : undefined,
+        style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={textColor} size="small" />
+        <ActivityIndicator
+          color={variant === 'primary' || variant === 'danger' ? '#FFFFFF' : T.colors.primary}
+          size="small"
+        />
       ) : (
         <Text
           style={[
@@ -125,10 +129,11 @@ const buttonStyles = StyleSheet.create({
     opacity: 0.5,
   },
   pressed: {
-    opacity: 0.8,
+    opacity: 0.85,
   },
   label: {
-    fontWeight: T.fontWeight.semiBold,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });
 
@@ -145,6 +150,7 @@ interface AppTextInputProps {
   secureTextEntry?: boolean;
   keyboardType?: KeyboardTypeOptions;
   leftIcon?: React.ReactNode;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }
 
 export const AppTextInput = React.memo(function AppTextInput({
@@ -156,7 +162,9 @@ export const AppTextInput = React.memo(function AppTextInput({
   secureTextEntry,
   keyboardType,
   leftIcon,
+  autoCapitalize = 'none',
 }: AppTextInputProps) {
+  const [focused, setFocused] = useState(false);
   const hasError = Boolean(error);
 
   return (
@@ -166,6 +174,7 @@ export const AppTextInput = React.memo(function AppTextInput({
       <View
         style={[
           inputStyles.container,
+          focused ? inputStyles.containerFocused : undefined,
           hasError ? inputStyles.containerError : undefined,
         ]}
       >
@@ -182,7 +191,9 @@ export const AppTextInput = React.memo(function AppTextInput({
           placeholderTextColor={T.colors.textMuted}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
-          autoCapitalize="none"
+          autoCapitalize={autoCapitalize}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         />
       </View>
 
@@ -196,26 +207,31 @@ const inputStyles = StyleSheet.create({
     marginBottom: T.spacing.md,
   },
   label: {
-    fontSize: T.fontSize.sm,
-    fontWeight: T.fontWeight.medium,
-    color: T.colors.text,
-    marginBottom: T.spacing.xs,
+    fontSize: 13,
+    fontWeight: '600',
+    color: T.colors.textSecondary,
+    marginBottom: 6,
   },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: T.colors.border,
-    borderRadius: T.radius.md,
+    borderRadius: 12,
     backgroundColor: T.colors.background,
-    height: 48,
+    height: 52,
     paddingHorizontal: T.spacing.md,
+  },
+  containerFocused: {
+    borderColor: T.colors.primary,
+    borderWidth: 1.5,
   },
   containerError: {
     borderColor: T.colors.error,
+    borderWidth: 1.5,
   },
   iconWrapper: {
-    marginRight: T.spacing.sm,
+    marginRight: 10,
   },
   input: {
     flex: 1,
@@ -270,12 +286,17 @@ export const Card = React.memo(function Card({
 const cardStyles = StyleSheet.create({
   container: {
     backgroundColor: T.colors.background,
-    borderRadius: T.radius.lg,
+    borderRadius: 16,
     padding: T.spacing.md,
-    ...T.shadows.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   pressed: {
-    opacity: 0.92,
+    opacity: 0.96,
+    transform: [{ scale: 0.98 }],
   },
 });
 
@@ -288,6 +309,7 @@ interface EmptyStateProps {
   subtitle?: string;
   actionLabel?: string;
   onAction?: () => void;
+  iconName?: keyof typeof Ionicons.glyphMap;
 }
 
 export const EmptyState = React.memo(function EmptyState({
@@ -295,9 +317,16 @@ export const EmptyState = React.memo(function EmptyState({
   subtitle,
   actionLabel,
   onAction,
+  iconName,
 }: EmptyStateProps) {
   return (
     <View style={emptyStyles.container}>
+      {iconName ? (
+        <View style={emptyStyles.iconCircle}>
+          <Ionicons name={iconName} size={36} color={T.colors.border} />
+        </View>
+      ) : null}
+
       <Text style={emptyStyles.title}>{title}</Text>
 
       {subtitle ? (
@@ -327,32 +356,41 @@ const emptyStyles = StyleSheet.create({
     paddingHorizontal: T.spacing.xl,
     paddingVertical: T.spacing.xxl,
   },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: T.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
-    fontSize: T.fontSize.lg,
-    fontWeight: T.fontWeight.semiBold,
+    fontSize: 18,
+    fontWeight: '700',
     color: T.colors.text,
     textAlign: 'center',
+    marginTop: 16,
     marginBottom: T.spacing.sm,
   },
   subtitle: {
     fontSize: T.fontSize.sm,
     color: T.colors.textMuted,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
     marginBottom: T.spacing.lg,
   },
   actionButton: {
     backgroundColor: T.colors.primary,
-    paddingHorizontal: T.spacing.lg,
-    paddingVertical: T.spacing.sm + 2,
-    borderRadius: T.radius.md,
+    borderRadius: T.radius.full,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
   },
   actionPressed: {
     opacity: 0.8,
   },
   actionLabel: {
-    fontSize: T.fontSize.sm,
-    fontWeight: T.fontWeight.semiBold,
+    fontSize: 15,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
 });

@@ -1,21 +1,28 @@
 {
   "expo": {
-    "name": "finpilot-ai",
+    "name": "FinPilot AI",
     "slug": "finpilot-ai",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/finpilot_app_icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/finpilot_splash_screen.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#061D42"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.finpilot.ai",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/finpilot_app_icon.png",
+        "backgroundColor": "#061D42"
       },
+      "package": "com.finpilot.ai",
+      "versionCode": 1,
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -24,6 +31,11 @@
     "plugins": [
       "expo-secure-store",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
+    }
   }
 }
