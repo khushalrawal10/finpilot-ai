@@ -114,6 +114,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const openaiKey = Deno.env.get('OPENAI_API_KEY')!;
+    const groqKey = Deno.env.get('GROQ_API_KEY')!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // ------------------------------------------------------
@@ -202,12 +203,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
         : 'No matching transactions found.';
 
     // ------------------------------------------------------
-    // STEP F — Build messages for OpenAI
+    // STEP F — Build messages for Groq LLM
     // ------------------------------------------------------
     const systemPrompt =
       'You are FinPilot, a personal finance assistant. Answer ONLY using the provided transaction data. Cite specific amounts, dates, and merchants. Never invent transactions. If data is insufficient, say so. Be concise — 2-3 sentences max for simple queries.';
 
-    const openaiMessages = [
+    const llmMessages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `User transactions:\n${context}` },
       ...history.map((h) => ({ role: h.role, content: h.content })),
@@ -233,19 +234,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq('id', sessionId);
 
     // ------------------------------------------------------
-    // STEP G — Stream OpenAI response
+    // STEP G — Stream Groq response
     // ------------------------------------------------------
     const llmResponse = await fetch(
-      'https://api.openai.com/v1/chat/completions',
+      'https://api.groq.com/openai/v1/chat/completions',
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${openaiKey}`,
+          'Authorization': `Bearer ${groqKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: openaiMessages,
+          model: 'llama-3.3-70b-versatile',
+          messages: llmMessages,
           stream: true,
           temperature: 0.1,
           max_tokens: 500,
@@ -255,7 +256,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (!llmResponse.ok) {
       throw new Error(
-        `OpenAI Chat API error (${llmResponse.status}): ${await llmResponse.text()}`,
+        `Groq Chat API error (${llmResponse.status}): ${await llmResponse.text()}`,
       );
     }
 
