@@ -6,6 +6,7 @@ import {
 
 import { supabase } from '@core/network/supabase-client';
 import { useAuthUser } from '@core/di/stores/authStore';
+import { useToast } from '@shared/components/Toast';
 import { SupabaseTransactionRepository } from '@features/transactions/data/repositories/SupabaseTransactionRepository';
 import {
   Transaction,
@@ -110,6 +111,7 @@ async function triggerEmbed(transactionId: string, userId: string): Promise<void
 export function useCreateTransaction() {
   const user = useAuthUser();
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   return useMutation<Transaction, Error, CreateTransactionInput>({
     mutationFn: (input: CreateTransactionInput) => {
@@ -120,11 +122,15 @@ export function useCreateTransaction() {
     },
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      showToast('Transaction added successfully', 'success');
 
       // Fire-and-forget: generate embedding for the new transaction
       if (user) {
         void triggerEmbed(data.id, user.id);
       }
+    },
+    onError: (err) => {
+      showToast(err.message || 'Failed to add transaction', 'error');
     },
   });
 }
@@ -140,12 +146,17 @@ interface UpdateTransactionVars {
 
 export function useUpdateTransaction() {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   return useMutation<Transaction, Error, UpdateTransactionVars>({
     mutationFn: ({ id, updates }: UpdateTransactionVars) =>
       txnRepo.updateTransaction(id, updates),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      showToast('Transaction updated', 'success');
+    },
+    onError: (err) => {
+      showToast(err.message || 'Failed to update transaction', 'error');
     },
   });
 }
@@ -160,12 +171,17 @@ interface DeleteTransactionVars {
 
 export function useDeleteTransaction() {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   return useMutation<void, Error, DeleteTransactionVars>({
     mutationFn: ({ id }: DeleteTransactionVars) =>
       txnRepo.deleteTransaction(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      showToast('Transaction deleted', 'info');
+    },
+    onError: (err) => {
+      showToast(err.message || 'Failed to delete transaction', 'error');
     },
   });
 }

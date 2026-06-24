@@ -8,6 +8,7 @@ import { supabase } from '@core/network/supabase-client';
 import useAuthStore from '@core/di/stores/authStore';
 import { SupabaseAuthRepository } from '@features/auth/data/repositories/SupabaseAuthRepository';
 import AppNavigator from '@navigation/AppNavigator';
+import { ToastProvider } from '@shared/components/Toast';
 import T from '@shared/theme';
 
 // ============================================================
@@ -160,7 +161,9 @@ export default function App(): React.JSX.Element {
     <GestureHandlerRootView style={styles.root}>
       <QueryClientProvider client={queryClient}>
         <NavigationContainer>
-          <AppNavigator />
+          <ToastProvider>
+            <AppNavigator />
+          </ToastProvider>
         </NavigationContainer>
       </QueryClientProvider>
     </GestureHandlerRootView>

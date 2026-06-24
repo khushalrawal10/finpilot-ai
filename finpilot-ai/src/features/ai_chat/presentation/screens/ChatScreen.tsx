@@ -285,9 +285,9 @@ export default function ChatScreen(): React.JSX.Element {
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showCursor = useBlinkingCursor(isStreaming);
 
-  // Build display list (inject streaming placeholder)
+  // Build display list (inject streaming placeholder ONLY while actively streaming)
   const displayMessages = useMemo(() => {
-    if (!isStreaming && !streamingText) return messages;
+    if (!isStreaming) return messages;
 
     const streamingMsg: ChatMessage = {
       id: 'streaming-placeholder',
@@ -300,6 +300,40 @@ export default function ChatScreen(): React.JSX.Element {
 
     return [...messages, streamingMsg];
   }, [messages, isStreaming, streamingText, sessionId]);
+
+  // Generate follow-up suggestions based on last assistant message
+  const followUpSuggestions = useMemo(() => {
+    if (isStreaming || messages.length === 0) return [];
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role !== 'assistant') return [];
+
+    const content = lastMsg.content.toLowerCase();
+    const suggestions: string[] = [];
+
+    if (content.includes('spend') || content.includes('expense')) {
+      suggestions.push('Break it down by category');
+      suggestions.push('Compare with last month');
+    } else if (content.includes('income')) {
+      suggestions.push('What are my expenses?');
+      suggestions.push('What\'s my net savings?');
+    } else if (content.includes('categor')) {
+      suggestions.push('Which category is highest?');
+      suggestions.push('Show monthly trends');
+    } else if (content.includes('transaction')) {
+      suggestions.push('Summarize my spending');
+      suggestions.push('Any unusual transactions?');
+    }
+
+    // Always add generic follow-ups if we don't have enough
+    if (suggestions.length < 2) {
+      suggestions.push('How much did I save this month?');
+    }
+    if (suggestions.length < 3) {
+      suggestions.push('What\'s my biggest expense?');
+    }
+
+    return suggestions.slice(0, 3);
+  }, [messages, isStreaming]);
 
   // Auto-scroll
   const scrollToBottom = useCallback(() => {
@@ -332,9 +366,6 @@ export default function ChatScreen(): React.JSX.Element {
     const first = messages[0].content;
     return first.length > 24 ? first.slice(0, 24) + '…' : first;
   }, [messages]);
-
-  const showSources = !isStreaming && sources.length > 0;
-  const [sourcesExpanded, setSourcesExpanded] = useState(false);
 
   const renderItem = useCallback(
     ({ item }: { item: ChatMessage }) => {
@@ -398,34 +429,19 @@ export default function ChatScreen(): React.JSX.Element {
         </View>
       ) : null}
 
-      {/* Sources pill */}
-      {showSources ? (
-        <Pressable
-          style={styles.sourcesPill}
-          onPress={() => setSourcesExpanded((v) => !v)}
-        >
-          <Ionicons name="documents-outline" size={14} color={T.colors.primary} />
-          <Text style={styles.sourcesText}>
-            {' '}Based on {sources.length} transaction{sources.length !== 1 ? 's' : ''}
-          </Text>
-          <Ionicons
-            name={sourcesExpanded ? 'chevron-up' : 'chevron-down'}
-            size={12}
-            color={T.colors.primary}
-          />
-        </Pressable>
-      ) : null}
 
-      {/* Suggested questions */}
-      {messages.length === 0 && !isStreaming ? (
+      {/* Suggested questions — initial or follow-up */}
+      {!isStreaming && (messages.length === 0 || followUpSuggestions.length > 0) ? (
         <View style={styles.suggestionsContainer}>
-          <Text style={styles.tryAsking}>Try asking:</Text>
+          <Text style={styles.tryAsking}>
+            {messages.length === 0 ? 'Try asking:' : 'Follow up:'}
+          </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.suggestionsScroll}
           >
-            {SUGGESTED_QUESTIONS.map((q) => (
+            {(messages.length === 0 ? SUGGESTED_QUESTIONS : followUpSuggestions).map((q) => (
               <Pressable
                 key={q}
                 style={({ pressed }) => [

@@ -2,11 +2,11 @@ import React from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 
 import T from '@shared/theme';
 import useAuthStore, { useIsAuthenticated } from '@core/di/stores/authStore';
@@ -19,6 +19,7 @@ import AddTransactionScreen from '@features/transactions/presentation/screens/Ad
 import ChatSessionListScreen from '@features/ai_chat/presentation/screens/ChatSessionListScreen';
 import ChatScreen from '@features/ai_chat/presentation/screens/ChatScreen';
 import AnalyticsScreen from '@features/analytics/presentation/screens/AnalyticsScreen';
+import SettingsScreen from '@features/settings/presentation/screens/SettingsScreen';
 
 // ============================================================
 // Param List Types
@@ -38,6 +39,7 @@ export type MainTabParamList = {
   Transactions: undefined;
   Chat: undefined;
   Analytics: undefined;
+  Settings: undefined;
 };
 
 export type TransactionStackParamList = {
@@ -126,10 +128,8 @@ function MainTabs(): React.JSX.Element {
         name="Transactions"
         component={TransactionStack}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Text style={focused ? tabStyles.iconActive : tabStyles.icon}>
-              🏠
-            </Text>
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={22} color={color} />
           ),
         }}
       />
@@ -138,10 +138,8 @@ function MainTabs(): React.JSX.Element {
         component={ChatStack}
         options={{
           tabBarLabel: 'AI Chat',
-          tabBarIcon: ({ focused }) => (
-            <Text style={focused ? tabStyles.iconActive : tabStyles.icon}>
-              💬
-            </Text>
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
           ),
         }}
       />
@@ -149,10 +147,17 @@ function MainTabs(): React.JSX.Element {
         name="Analytics"
         component={AnalyticsScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Text style={focused ? tabStyles.iconActive : tabStyles.icon}>
-              📊
-            </Text>
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'bar-chart' : 'bar-chart-outline'} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={22} color={color} />
           ),
         }}
       />
@@ -163,22 +168,21 @@ function MainTabs(): React.JSX.Element {
 const tabStyles = StyleSheet.create({
   tabBar: {
     backgroundColor: T.colors.background,
-    borderTopColor: T.colors.border,
+    borderTopColor: 'rgba(0,0,0,0.06)',
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: T.spacing.xs,
-    height: 56,
+    paddingTop: 6,
+    paddingBottom: 6,
+    height: 64,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 8,
   },
   tabLabel: {
-    fontSize: T.fontSize.xs,
-    fontWeight: T.fontWeight.medium,
-  },
-  icon: {
-    fontSize: 20,
-    opacity: 0.5,
-  },
-  iconActive: {
-    fontSize: 20,
-    opacity: 1,
+    fontSize: 11,
+    fontWeight: T.fontWeight.semiBold,
+    marginTop: 2,
   },
 });
 

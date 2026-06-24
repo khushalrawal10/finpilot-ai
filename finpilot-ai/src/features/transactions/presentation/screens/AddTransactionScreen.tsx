@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import T from '@shared/theme';
 import { AppTextInput } from '@shared/components';
+import CalendarPicker from '@shared/components/CalendarPicker';
 import {
   useCreateTransaction,
   useCategories,
@@ -38,7 +39,7 @@ const addTransactionSchema = z.object({
     .refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
       message: 'Amount must be greater than zero',
     }),
-  description: z.string().min(1, 'Description is required'),
+  description: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -89,7 +90,7 @@ export default function AddTransactionScreen(): React.JSX.Element {
         type,
         amount: Number(data.amount),
         currencyCode: 'USD',
-        description: data.description.trim(),
+        description: data.description?.trim() || '',
         notes: data.notes?.trim() || undefined,
         categoryId: selectedCategoryId ?? undefined,
         transactionDate: format(transactionDate, 'yyyy-MM-dd'),
@@ -219,14 +220,14 @@ export default function AddTransactionScreen(): React.JSX.Element {
           }}
         />
 
-        {/* Description */}
+        {/* Description (optional) */}
         <Controller
           control={control}
           name="description"
           render={({ field: { onChange, value } }) => (
             <AppTextInput
-              label={`Description${errors.description ? ' *' : ''}`}
-              value={value}
+              label="Description (optional)"
+              value={value ?? ''}
               onChangeText={onChange}
               placeholder="What was this for?"
               error={errors.description?.message}
@@ -239,22 +240,20 @@ export default function AddTransactionScreen(): React.JSX.Element {
         {/* Date */}
         <Text style={styles.sectionLabel}>DATE</Text>
         <Pressable style={styles.dateRow} onPress={() => setShowDatePicker(true)}>
-          <Ionicons name="calendar-outline" size={18} color={T.colors.border} style={styles.dateIcon} />
+          <Ionicons name="calendar-outline" size={18} color={T.colors.primary} style={styles.dateIcon} />
           <Text style={styles.dateText}>
             {format(transactionDate, 'EEEE, MMM d, yyyy')}
           </Text>
           <Ionicons name="chevron-forward" size={16} color={T.colors.border} />
         </Pressable>
 
-        {showDatePicker && (
-          <DateTimePicker
-            value={transactionDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleDateChange}
-            maximumDate={new Date()}
-          />
-        )}
+        <CalendarPicker
+          visible={showDatePicker}
+          selectedDate={transactionDate}
+          onSelect={(date) => setTransactionDate(date)}
+          onClose={() => setShowDatePicker(false)}
+          maxDate={new Date()}
+        />
 
         {/* Notes */}
         <Controller
@@ -442,5 +441,20 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: T.colors.text,
+  },
+  dateInputWeb: {
+    fontSize: 15,
+    color: T.colors.primary,
+    fontWeight: '600',
+    padding: 0,
+    minWidth: 130,
+    borderWidth: 0,
+    outlineWidth: 0,
+  } as any,
+  dateDisplayText: {
+    flex: 1,
+    fontSize: 13,
+    color: T.colors.textMuted,
+    textAlign: 'right',
   },
 });

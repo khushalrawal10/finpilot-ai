@@ -136,45 +136,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       (historyRows as Array<{ role: string; content: string }>) ?? [];
 
     // ------------------------------------------------------
-    // STEP C — Generate query embedding
+    // STEP C — Fetch transactions (semantic or fallback)
     // ------------------------------------------------------
-    const embeddingRes = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: message,
-      }),
-    });
-
-    if (!embeddingRes.ok) {
-      throw new Error(`Embedding API error: ${await embeddingRes.text()}`);
-    }
-
-    const embeddingData = await embeddingRes.json();
-    const queryEmbedding: number[] = embeddingData.data[0].embedding;
-
-    // ------------------------------------------------------
-    // STEP D — Hybrid semantic search via RPC
-    // ------------------------------------------------------
-    const { data: searchResults, error: searchError } = await supabase.rpc(
-      'search_transactions_semantic',
-      {
-        p_query_embedding: queryEmbedding,
-        p_user_id: userId,
-        p_date_from: dateFrom,
-        p_date_to: dateTo,
-        p_limit: 15,
-      },
-    );
-
-    if (searchError) {
-      console.error('Semantic search error:', searchError.message);
-    }
-
     interface SearchRow {
       id: string;
       type: string;
@@ -184,13 +147,91 @@ Deno.serve(async (req: Request): Promise<Response> => {
       category_name: string;
       transaction_date: string;
       tags: string[];
-      similarity: number;
+      similarity?: number;
     }
 
-    const rows: SearchRow[] = (searchResults as SearchRow[]) ?? [];
+    let rows: SearchRow[] = [];
+
+    try {
+      // Try semantic search with OpenAI embeddings
+      const embeddingRes = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'text-embedding-3-small',
+          input: message,
+        }),
+      });
+
+      if (!embeddingRes.ok) {
+        throw new Error('Embedding API unavailable');
+      }
+
+      const embeddingData = await embeddingRes.json();
+      const queryEmbedding: number[] = embeddingData.data[0].embedding;
+
+      const { data: searchResults, error: searchError } = await supabase.rpc(
+        'search_transactions_semantic',
+        {
+          p_query_embedding: queryEmbedding,
+          p_user_id: userId,
+          p_date_from: dateFrom,
+          p_date_to: dateTo,
+          p_limit: 15,
+        },
+      );
+
+      if (searchError) {
+        console.error('Semantic search error:', searchError.message);
+      }
+
+      rows = (searchResults as SearchRow[]) ?? [];
+    } catch (embeddingErr) {
+      // Fallback: simple SQL-based search (no embeddings needed)
+      console.warn('Embedding unavailable, using fallback search:', embeddingErr);
+
+      let query = supabase
+        .from('transactions')
+        .select(`
+          id,
+          type,
+          amount,
+          currency_code,
+          description,
+          transaction_date,
+          tags,
+          categories ( name )
+        `)
+        .eq('user_id', userId)
+        .order('transaction_date', { ascending: false })
+        .limit(20);
+
+      if (dateFrom) query = query.gte('transaction_date', dateFrom);
+      if (dateTo) query = query.lte('transaction_date', dateTo);
+
+      const { data: fallbackRows, error: fallbackError } = await query;
+
+      if (fallbackError) {
+        console.error('Fallback search error:', fallbackError.message);
+      }
+
+      rows = ((fallbackRows as any[]) ?? []).map((r) => ({
+        id: r.id,
+        type: r.type,
+        amount: r.amount,
+        currency_code: r.currency_code,
+        description: r.description,
+        category_name: r.categories?.name ?? 'Uncategorized',
+        transaction_date: r.transaction_date,
+        tags: r.tags ?? [],
+      }));
+    }
 
     // ------------------------------------------------------
-    // STEP E — Format context
+    // STEP D — Format context
     // ------------------------------------------------------
     const context =
       rows.length > 0
@@ -224,12 +265,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
       content: message,
     });
 
+    // Auto-name session from first user message
+    const autoTitle = history.length === 0
+      ? message.trim().slice(0, 40) + (message.trim().length > 40 ? '…' : '')
+      : undefined;
+
     // Update session metadata
     await supabase
       .from('chat_sessions')
       .update({
         last_message_at: new Date().toISOString(),
         message_count: (history.length + 1),
+        ...(autoTitle ? { title: autoTitle } : {}),
       })
       .eq('id', sessionId);
 

@@ -1,12 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,6 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { format, isToday, isYesterday } from 'date-fns';
+
 
 import T from '@shared/theme';
 import { EmptyState } from '@shared/components';
@@ -26,6 +30,7 @@ import type {
   Transaction,
   TransactionFilters,
 } from '@features/transactions/domain/entities/Transaction';
+import { useAuthUser } from '@core/di/stores/authStore';
 
 // ============================================================
 // Navigation types
@@ -222,7 +227,11 @@ const FilterChip = React.memo(function FilterChip({
 }: FilterChipProps) {
   return (
     <Pressable
-      style={[chipStyles.chip, selected ? chipStyles.chipSelected : undefined]}
+      style={({ pressed }) => [
+        chipStyles.chip,
+        selected ? chipStyles.chipSelected : undefined,
+        pressed ? chipStyles.chipPressed : undefined,
+      ]}
       onPress={onPress}
     >
       <Text style={[chipStyles.chipText, selected ? chipStyles.chipTextSelected : undefined]}>
@@ -234,19 +243,29 @@ const FilterChip = React.memo(function FilterChip({
 
 const chipStyles = StyleSheet.create({
   chip: {
-    borderRadius: T.radius.full,
+    borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingVertical: 6,
     marginRight: 8,
-    backgroundColor: T.colors.surface,
+    backgroundColor: T.colors.background,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    height: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   chipSelected: {
     backgroundColor: T.colors.primary,
+    borderColor: T.colors.primary,
+  },
+  chipPressed: {
+    opacity: 0.8,
   },
   chipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: T.colors.textMuted,
+    color: T.colors.textSecondary,
+    lineHeight: 18,
   },
   chipTextSelected: {
     color: '#FFFFFF',
@@ -260,6 +279,8 @@ const chipStyles = StyleSheet.create({
 export default function TransactionListScreen(): React.JSX.Element {
   const navigation = useNavigation<NavProp>();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const { width } = useWindowDimensions();
+  const authUser = useAuthUser();
 
   const filters: TransactionFilters = selectedCategoryId
     ? { categoryId: selectedCategoryId }
@@ -294,6 +315,11 @@ export default function TransactionListScreen(): React.JSX.Element {
   const handleAddPress = useCallback(() => {
     navigation.navigate('AddTransaction');
   }, [navigation]);
+
+  // Responsive max width for web
+  const isWide = width > 600;
+  const contentMaxWidth = isWide ? 560 : undefined;
+  const profileInitial = (authUser?.displayName || authUser?.email || '?')[0].toUpperCase();
 
   // Build list items with date section headers
   type ListItem =
@@ -334,22 +360,9 @@ export default function TransactionListScreen(): React.JSX.Element {
 
   const keyExtractor = useCallback((item: ListItem) => item.key, []);
 
-  return (
-    <View style={styles.root}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Transactions</Text>
-        <Pressable
-          style={({ pressed }) => [
-            styles.addButton,
-            pressed ? styles.addButtonPressed : undefined,
-          ]}
-          onPress={handleAddPress}
-        >
-          <Ionicons name="add" size={26} color={T.colors.primary} />
-        </Pressable>
-      </View>
-
+  // List header: banner + chips (fixes scroll issue)
+  const ListHeader = useMemo(() => (
+    <View style={contentMaxWidth ? { maxWidth: contentMaxWidth, alignSelf: 'center' as const, width: '100%' as unknown as number } : undefined}>
       {/* Summary banner */}
       <LinearGradient
         colors={T.gradients.primaryCard}
@@ -357,18 +370,33 @@ export default function TransactionListScreen(): React.JSX.Element {
         end={{ x: 1, y: 1 }}
         style={styles.banner}
       >
-        <Text style={styles.bannerLabel}>Spent this month</Text>
-        <Text style={styles.bannerAmount}>{formatAmount(monthlyExpense)}</Text>
+        <View style={styles.bannerTop}>
+          <View>
+            <Text style={styles.bannerLabel}>Spent this month</Text>
+            <Text style={styles.bannerAmount}>{formatAmount(monthlyExpense)}</Text>
+          </View>
+          <View style={styles.bannerNetContainer}>
+            <Text style={styles.bannerNetLabel}>Net</Text>
+            <Text style={[
+              styles.bannerNetAmount,
+              { color: monthlyIncome - monthlyExpense >= 0 ? '#4ADE80' : '#FCA5A5' },
+            ]}>
+              {monthlyIncome - monthlyExpense >= 0 ? '+' : ''}
+              {formatAmount(monthlyIncome - monthlyExpense)}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.bannerDivider} />
         <View style={styles.bannerChips}>
-          <View style={[styles.bannerChip, { backgroundColor: 'rgba(34,197,94,0.2)' }]}>
-            <Ionicons name="arrow-down" size={12} color="#22C55E" />
-            <Text style={[styles.bannerChipText, { color: '#22C55E' }]}>
+          <View style={[styles.bannerChip, { backgroundColor: 'rgba(34,197,94,0.15)' }]}>
+            <Ionicons name="trending-up" size={14} color="#4ADE80" />
+            <Text style={[styles.bannerChipText, { color: '#4ADE80' }]}>
               {' '}{formatAmount(monthlyIncome)}
             </Text>
           </View>
-          <View style={[styles.bannerChip, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
-            <Ionicons name="arrow-up" size={12} color="#EF4444" />
-            <Text style={[styles.bannerChipText, { color: '#EF4444' }]}>
+          <View style={[styles.bannerChip, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
+            <Ionicons name="trending-down" size={14} color="#FCA5A5" />
+            <Text style={[styles.bannerChipText, { color: '#FCA5A5' }]}>
               {' '}{formatAmount(monthlyExpense)}
             </Text>
           </View>
@@ -398,22 +426,66 @@ export default function TransactionListScreen(): React.JSX.Element {
           />
         ))}
       </ScrollView>
+    </View>
+  ), [monthlyExpense, monthlyIncome, selectedCategoryId, categories, contentMaxWidth]);
 
-      {/* Transaction list */}
+  const topPadding = Platform.OS === 'web' ? 20 : (StatusBar.currentHeight ?? 44);
+
+  return (
+    <View style={styles.root}>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: topPadding + 12 }]}>
+        <View style={contentMaxWidth ? { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' as const, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const } : styles.headerInner}>
+          <Text style={styles.headerTitle}>Transactions</Text>
+          <View style={styles.headerActions}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.addButton,
+                pressed ? styles.addButtonPressed : undefined,
+              ]}
+              onPress={handleAddPress}
+            >
+              <Ionicons name="add" size={22} color={T.colors.primary} />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.profileButton,
+                pressed ? styles.addButtonPressed : undefined,
+              ]}
+              onPress={() => {
+                // Navigate to Settings tab
+                const nav = navigation.getParent?.();
+                if (nav) nav.navigate('Settings');
+              }}
+            >
+              <Text style={styles.profileInitial}>{profileInitial}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      {/* Transaction list with banner as header */}
       {transactions.length === 0 && !isLoading ? (
-        <EmptyState
-          iconName="receipt-outline"
-          title="No transactions yet"
-          subtitle="Tap the + button to add your first transaction"
-          actionLabel="Add Transaction"
-          onAction={handleAddPress}
-        />
+        <View style={{ flex: 1 }}>
+          {ListHeader}
+          <EmptyState
+            iconName="receipt-outline"
+            title="No transactions yet"
+            subtitle="Tap the + button to add your first transaction"
+            actionLabel="Add Transaction"
+            onAction={handleAddPress}
+          />
+        </View>
       ) : (
         <FlatList
           data={listData}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
-          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={ListHeader}
+          contentContainerStyle={[
+            styles.listContent,
+            contentMaxWidth ? { maxWidth: contentMaxWidth, alignSelf: 'center' as const, width: '100%' as unknown as number } : undefined,
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -435,26 +507,46 @@ const styles = StyleSheet.create({
     backgroundColor: T.colors.surface,
   },
   header: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    backgroundColor: T.colors.background,
+  },
+  headerInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 56,
-    paddingBottom: 16,
-    backgroundColor: T.colors.background,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '800',
     color: T.colors.text,
+    letterSpacing: -0.5,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: T.colors.surface,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: T.colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  profileButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: T.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileInitial: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   addButtonPressed: {
     opacity: 0.7,
@@ -466,54 +558,86 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     padding: 20,
   },
+  bannerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
   bannerLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.6)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   bannerAmount: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: '800',
     color: '#FFFFFF',
     marginTop: 4,
+    letterSpacing: -1,
+  },
+  bannerNetContainer: {
+    alignItems: 'flex-end',
+    paddingTop: 2,
+  },
+  bannerNetLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  bannerNetAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  bannerDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginVertical: 14,
   },
   bannerChips: {
     flexDirection: 'row',
-    marginTop: 12,
-    gap: 8,
+    gap: 10,
   },
   bannerChip: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: T.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
   },
   bannerChipText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
   },
   filterRow: {
-    paddingVertical: 8,
+    paddingVertical: 10,
     backgroundColor: T.colors.background,
     marginTop: 8,
+    maxHeight: 54,
   },
   filterContent: {
     paddingHorizontal: 16,
+    alignItems: 'center',
   },
   listContent: {
     paddingTop: 8,
-    paddingBottom: 24,
+    paddingBottom: 100,
   },
 });
 
 const listStyles = StyleSheet.create({
   dateHeader: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: T.colors.textMuted,
-    paddingLeft: 16,
-    paddingTop: 16,
-    paddingBottom: 4,
+    paddingLeft: 20,
+    paddingTop: 18,
+    paddingBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });

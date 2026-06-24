@@ -4,11 +4,12 @@ import {
   useMutation,
   useQueryClient,
 } from '@tanstack/react-query';
-import EventSource from 'react-native-sse';
+import { Platform } from 'react-native';
 
 import { supabase } from '@core/network/supabase-client';
 import { useAuthUser } from '@core/di/stores/authStore';
 import { DataError } from '@core/types/errors';
+import { useToast } from '@shared/components/Toast';
 
 // ============================================================
 // Types
@@ -229,11 +230,16 @@ export function useCreateSession() {
 
 export function useDeleteSession() {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   return useMutation<void, Error, string>({
     mutationFn: (id: string) => deleteSession(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.sessions });
+      showToast('Chat deleted', 'info');
+    },
+    onError: (err) => {
+      showToast(err.message || 'Failed to delete chat', 'error');
     },
   });
 }
@@ -249,6 +255,195 @@ interface StreamState {
   error: string | null;
 }
 
+interface ParsedSSE {
+  token?: string;
+  done?: boolean;
+  sources?: string[];
+  error?: string;
+}
+
+/**
+ * Web streaming: uses native fetch + ReadableStream.
+ * This avoids CORS issues because fetch handles preflight correctly,
+ * unlike EventSource which only supports GET.
+ */
+async function streamOnWeb(
+  url: string,
+  accessToken: string,
+  anonKey: string,
+  body: string,
+  fullTextRef: React.MutableRefObject<string>,
+  setState: React.Dispatch<React.SetStateAction<StreamState>>,
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionId: string,
+) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'apikey': anonKey,
+      'Content-Type': 'application/json',
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    setState((prev) => ({
+      ...prev,
+      error: `Server error (${response.status}): ${errText}`,
+      isStreaming: false,
+    }));
+    return;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    setState((prev) => ({ ...prev, error: 'No response body', isStreaming: false }));
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Process complete SSE events (separated by double newlines)
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() ?? '';
+
+    for (const part of parts) {
+      for (const line of part.split('\n')) {
+        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+
+        try {
+          const parsed: ParsedSSE = JSON.parse(line.slice(6));
+
+          if (parsed.error) {
+            setState((prev) => ({ ...prev, error: parsed.error ?? 'Unknown error', isStreaming: false }));
+            return;
+          }
+
+          if (parsed.done) {
+            setState({
+              streamingText: fullTextRef.current,
+              isStreaming: false,
+              sources: parsed.sources ?? [],
+              error: null,
+            });
+            void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.messages(sessionId) });
+            void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.sessions });
+            return;
+          }
+
+          if (parsed.token) {
+            fullTextRef.current += parsed.token;
+            setState((prev) => ({ ...prev, streamingText: fullTextRef.current }));
+          }
+        } catch {
+          // Skip malformed SSE
+        }
+      }
+    }
+  }
+
+  // Process any remaining buffer
+  if (buffer.trim()) {
+    for (const line of buffer.split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const parsed: ParsedSSE = JSON.parse(line.slice(6));
+        if (parsed.done) {
+          setState({
+            streamingText: fullTextRef.current,
+            isStreaming: false,
+            sources: parsed.sources ?? [],
+            error: null,
+          });
+          void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.messages(sessionId) });
+          void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.sessions });
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+/**
+ * Native streaming: uses react-native-sse EventSource.
+ */
+function streamOnNative(
+  url: string,
+  accessToken: string,
+  anonKey: string,
+  body: string,
+  fullTextRef: React.MutableRefObject<string>,
+  setState: React.Dispatch<React.SetStateAction<StreamState>>,
+  queryClient: ReturnType<typeof useQueryClient>,
+  sessionId: string,
+) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const EventSource = require('react-native-sse').default;
+
+  const es = new EventSource(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'apikey': anonKey,
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+    body,
+    pollingInterval: 0,
+  });
+
+  es.addEventListener('message', (event: { data?: string }) => {
+    if (!event.data) return;
+    try {
+      const parsed: ParsedSSE = JSON.parse(event.data);
+
+      if (parsed.error) {
+        setState((prev) => ({ ...prev, error: parsed.error ?? 'Unknown error', isStreaming: false }));
+        es.close();
+        return;
+      }
+
+      if (parsed.done) {
+        setState({
+          streamingText: fullTextRef.current,
+          isStreaming: false,
+          sources: parsed.sources ?? [],
+          error: null,
+        });
+        es.close();
+        void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.messages(sessionId) });
+        void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.sessions });
+        return;
+      }
+
+      if (parsed.token) {
+        fullTextRef.current += parsed.token;
+        setState((prev) => ({ ...prev, streamingText: fullTextRef.current }));
+      }
+    } catch {
+      // Skip malformed SSE lines
+    }
+  });
+
+  es.addEventListener('error', () => {
+    setState((prev) => ({
+      ...prev,
+      error: 'Connection failed. Please try again.',
+      isStreaming: false,
+    }));
+    es.close();
+  });
+}
+
 export function useSendMessage(sessionId: string) {
   const user = useAuthUser();
   const queryClient = useQueryClient();
@@ -260,7 +455,6 @@ export function useSendMessage(sessionId: string) {
     error: null,
   });
 
-  // Use ref to accumulate text without triggering re-renders on every token
   const fullTextRef = useRef('');
 
   const sendMessage = useCallback(
@@ -276,9 +470,7 @@ export function useSendMessage(sessionId: string) {
       });
       fullTextRef.current = '';
 
-      // -------------------------------------------------
-      // 1. Optimistically add user message to cache
-      // -------------------------------------------------
+      // Optimistically add user message to cache
       const optimisticMsg: ChatMessage = {
         id: `temp-${Date.now()}`,
         sessionId,
@@ -293,9 +485,7 @@ export function useSendMessage(sessionId: string) {
         (old) => [...(old ?? []), optimisticMsg],
       );
 
-      // -------------------------------------------------
-      // 2. Get fresh access token
-      // -------------------------------------------------
+      // Get fresh access token
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
@@ -305,73 +495,23 @@ export function useSendMessage(sessionId: string) {
 
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
       const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const url = `${supabaseUrl}/functions/v1/chat`;
+      const body = JSON.stringify({ message, sessionId, userId: user.id });
 
-      // -------------------------------------------------
-      // 3. Open SSE stream via react-native-sse
-      //    Edge function saves both messages; client only reads
-      // -------------------------------------------------
-      const es = new EventSource(
-        `${supabaseUrl}/functions/v1/chat`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': anonKey,
-            'Content-Type': 'application/json',
-          },
-          method: 'POST',
-          body: JSON.stringify({ message, sessionId, userId: user.id }),
-          pollingInterval: 0,
-        },
-      );
-
-      es.addEventListener('message', (event) => {
-        if (!event.data) return;
-        try {
-          const parsed = JSON.parse(event.data) as {
-            token?: string;
-            done?: boolean;
-            sources?: string[];
-            error?: string;
-          };
-
-          if (parsed.error) {
-            setState((prev) => ({ ...prev, error: parsed.error ?? 'Unknown error', isStreaming: false }));
-            es.close();
-            return;
-          }
-
-          if (parsed.done) {
-            const sourceIds = parsed.sources ?? [];
-            setState({
-              streamingText: fullTextRef.current,
-              isStreaming: false,
-              sources: sourceIds,
-              error: null,
-            });
-            es.close();
-            // Edge function already persisted both messages — just refetch
-            void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.messages(sessionId) });
-            void queryClient.invalidateQueries({ queryKey: CHAT_KEYS.sessions });
-            return;
-          }
-
-          if (parsed.token) {
-            fullTextRef.current += parsed.token;
-            setState((prev) => ({ ...prev, streamingText: fullTextRef.current }));
-          }
-        } catch {
-          // Skip malformed SSE lines
+      // Stream using platform-appropriate method
+      try {
+        if (Platform.OS === 'web') {
+          await streamOnWeb(url, session.access_token, anonKey, body, fullTextRef, setState, queryClient, sessionId);
+        } else {
+          streamOnNative(url, session.access_token, anonKey, body, fullTextRef, setState, queryClient, sessionId);
         }
-      });
-
-      es.addEventListener('error', () => {
+      } catch (err) {
         setState((prev) => ({
           ...prev,
-          error: 'Connection failed. Please try again.',
+          error: err instanceof Error ? err.message : 'Connection failed',
           isStreaming: false,
         }));
-        es.close();
-      });
+      }
     },
     [user, sessionId, queryClient],
   );

@@ -9,6 +9,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 
 import T from '@shared/theme';
 import { supabase } from '@core/network/supabase-client';
@@ -54,12 +55,14 @@ function useMonthlySummary(year: number, month: number) {
       const row = Array.isArray(data) ? data[0] : data;
       return {
         total_income: Number(row?.total_income ?? 0),
-        total_expenses: Number(row?.total_expenses ?? 0),
+        total_expenses: Number(row?.total_expense ?? row?.total_expenses ?? 0),
         net: Number(row?.net ?? 0),
         transaction_count: Number(row?.transaction_count ?? 0),
       };
     },
     enabled: user !== null,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 }
 
@@ -79,19 +82,24 @@ function useCategoryBreakdown(dateFrom: string, dateTo: string) {
 
       const rows = (data as Array<Record<string, unknown>>) ?? [];
       const total = rows.reduce(
-        (sum, r) => sum + Number(r.total_amount ?? 0),
+        (sum, r) => sum + Number(r.total ?? r.total_amount ?? r.s ?? 0),
         0,
       );
 
-      return rows.map((r) => ({
-        category_name: String(r.category_name ?? 'Uncategorized'),
-        category_color: String(r.category_color ?? '#6B7280'),
-        total_amount: Number(r.total_amount ?? 0),
-        transaction_count: Number(r.transaction_count ?? 0),
-        percentage: total > 0 ? (Number(r.total_amount ?? 0) / total) * 100 : 0,
-      }));
+      return rows.map((r) => {
+        const amount = Number(r.total ?? r.total_amount ?? r.s ?? 0);
+        return {
+          category_name: String(r.category_name ?? r.cat ?? 'Uncategorized'),
+          category_color: String(r.category_color ?? r.col ?? '#6B7280'),
+          total_amount: amount,
+          transaction_count: Number(r.transaction_count ?? r.n ?? 0),
+          percentage: total > 0 ? (amount / total) * 100 : 0,
+        };
+      });
     },
     enabled: user !== null,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 }
 
@@ -310,8 +318,18 @@ export default function AnalyticsScreen(): React.JSX.Element {
 
   const { from, to } = useMemo(() => getMonthRange(year, month), [year, month]);
 
-  const { data: summary, isLoading: summaryLoading } = useMonthlySummary(year, month);
-  const { data: categories, isLoading: categoriesLoading } = useCategoryBreakdown(from, to);
+  const summaryQuery = useMonthlySummary(year, month);
+  const categoriesQuery = useCategoryBreakdown(from, to);
+  const { data: summary, isLoading: summaryLoading } = summaryQuery;
+  const { data: categories, isLoading: categoriesLoading } = categoriesQuery;
+
+  // Refetch when tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      summaryQuery.refetch();
+      categoriesQuery.refetch();
+    }, [summaryQuery.refetch, categoriesQuery.refetch]),
+  );
 
   const handlePrev = useCallback(() => {
     if (month === 1) { setYear((y) => y - 1); setMonth(12); }

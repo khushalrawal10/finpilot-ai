@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabase } from '@core/network/supabase-client';
 import { SupabaseAuthRepository } from '@features/auth/data/repositories/SupabaseAuthRepository';
 import useAuthStore from '@core/di/stores/authStore';
+import { useToast } from '@shared/components/Toast';
 
 // ============================================================
 // Validation
@@ -37,6 +38,7 @@ export function useAuthActions(): AuthActions {
 
   const setUser = useAuthStore((s) => s.setUser);
   const clearUser = useAuthStore((s) => s.clearUser);
+  const { showToast } = useToast();
 
   const login = useCallback(
     async (email: string, password: string): Promise<void> => {
@@ -56,10 +58,12 @@ export function useAuthActions(): AuthActions {
           displayName: user.displayName,
           defaultCurrency: user.defaultCurrency,
         });
+        showToast('Welcome back!', 'success');
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Login failed';
         setError(message);
+        showToast(message, 'error');
         throw err;
       } finally {
         setIsLoading(false);
@@ -86,10 +90,12 @@ export function useAuthActions(): AuthActions {
           displayName: user.displayName,
           defaultCurrency: user.defaultCurrency,
         });
+        showToast('Account created successfully!', 'success');
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Registration failed';
         setError(message);
+        showToast(message, 'error');
         throw err;
       } finally {
         setIsLoading(false);
@@ -105,10 +111,12 @@ export function useAuthActions(): AuthActions {
     try {
       await authRepo.signOut();
       clearUser();
+      showToast('Logged out', 'info');
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Logout failed';
       setError(message);
+      showToast(message, 'error');
       throw err;
     } finally {
       setIsLoading(false);

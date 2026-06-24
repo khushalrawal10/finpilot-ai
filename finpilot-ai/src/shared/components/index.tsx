@@ -165,6 +165,7 @@ export const AppTextInput = React.memo(function AppTextInput({
   autoCapitalize = 'none',
 }: AppTextInputProps) {
   const [focused, setFocused] = useState(false);
+  const [hidePassword, setHidePassword] = useState(true);
   const hasError = Boolean(error);
 
   return (
@@ -189,12 +190,26 @@ export const AppTextInput = React.memo(function AppTextInput({
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={T.colors.textMuted}
-          secureTextEntry={secureTextEntry}
+          secureTextEntry={secureTextEntry && hidePassword}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
         />
+
+        {secureTextEntry ? (
+          <Pressable
+            onPress={() => setHidePassword((prev) => !prev)}
+            style={inputStyles.eyeButton}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={hidePassword ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color={T.colors.textMuted}
+            />
+          </Pressable>
+        ) : null}
       </View>
 
       {hasError ? <Text style={inputStyles.error}>{error}</Text> : null}
@@ -242,6 +257,10 @@ const inputStyles = StyleSheet.create({
   },
   inputWithIcon: {
     paddingLeft: 0,
+  },
+  eyeButton: {
+    paddingLeft: 8,
+    justifyContent: 'center',
   },
   error: {
     fontSize: T.fontSize.xs,
